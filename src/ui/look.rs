@@ -1,11 +1,12 @@
-use rune::Color;
 use rune::color::srgb_decode;
+use rune::{Color, Shadow};
 use rune_kit::{Kit, PaletteFocus, PaletteSeed};
 
 #[derive(Clone, Copy)]
 pub struct Look {
     pub bg: Color,
     pub card: Color,
+    pub raised: Color,
     pub card_border: Color,
     pub field: Color,
     pub field_border: Color,
@@ -20,6 +21,8 @@ pub struct Look {
     pub selected: Color,
     pub code: Color,
     pub shadow: Color,
+    pub lift: Color,
+    pub scrim: Color,
     pub hair: f32,
 }
 
@@ -30,6 +33,7 @@ impl Look {
             Look {
                 bg: srgb(0x1c1c1e),
                 card: srgb(0x2a2a2d),
+                raised: srgb(0x353538),
                 card_border: srgb(0xffffff).alpha(0.07),
                 field: srgb(0xffffff).alpha(0.06),
                 field_border: srgb(0xffffff).alpha(0.08),
@@ -44,12 +48,15 @@ impl Look {
                 selected: srgb(0x44382e),
                 code: srgb(0xffffff).alpha(0.09),
                 shadow: srgb(0x000000).alpha(0.3),
+                lift: srgb(0x000000).alpha(0.55),
+                scrim: srgb(0x000000).alpha(0.32),
                 hair,
             }
         } else {
             Look {
                 bg: srgb(0xededf0),
                 card: srgb(0xffffff),
+                raised: srgb(0xffffff),
                 card_border: srgb(0x000000).alpha(0.06),
                 field: srgb(0xf8f8fa),
                 field_border: srgb(0x000000).alpha(0.07),
@@ -64,6 +71,8 @@ impl Look {
                 selected: srgb(0xf6efea),
                 code: srgb(0x000000).alpha(0.06),
                 shadow: srgb(0x000000).alpha(0.05),
+                lift: srgb(0x000000).alpha(0.16),
+                scrim: srgb(0x000000).alpha(0.1),
                 hair,
             }
         }
@@ -74,8 +83,13 @@ impl Look {
             PaletteSeed { bg: self.card, fg: self.text, accent: self.accent },
             PaletteFocus::Accent,
         );
-        kit.c.layer_01 = self.card;
+        kit.c.layer_01 = self.raised;
+        kit.c.surface_raised = self.raised;
         kit
+    }
+
+    pub fn popover_shadow(&self) -> Shadow {
+        Shadow { y: 8.0, blur: 28.0, color: self.lift, ..Shadow::default() }
     }
 }
 

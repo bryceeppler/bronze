@@ -1,5 +1,5 @@
 use rune::tok::type_;
-use rune::{Cursor, El, Key, KeyEvent, Shadow, Tx, col, el, icon, row, text, text_input};
+use rune::{Cursor, El, Key, KeyEvent, Tx, col, el, icon, row, text, text_input};
 use rune_kit::{Kit, Menu, MenuItem, context_menu};
 
 use super::app::{App, Overlay, Pick};
@@ -69,12 +69,12 @@ fn note_menu(s: &App, menu: Menu) -> Menu {
 }
 
 fn sheet(content: El, look: &Look) -> El {
-    col().key("sheet").absolute(0.0, 0.0).w_full().h_full().px(16.0).pt(50.0).items_stretch().child(
+    col().key("sheet").absolute(0.0, 0.0).w_full().h_full().px(16.0).pt(50.0).items_stretch().fill(look.scrim).child(
         content
             .radius(14.0)
-            .fill(look.card)
+            .fill(look.raised)
             .border(look.hair, look.card_border)
-            .box_shadow(Shadow { y: 10.0, blur: 30.0, color: rune::Color::BLACK.alpha(0.18), ..Shadow::default() })
+            .box_shadow(look.popover_shadow())
             .modal(true, |s: &mut App| s.overlay = Overlay::None),
     )
 }
@@ -106,7 +106,7 @@ fn switcher(s: &App, picked: usize, look: &Look) -> El {
                 .gap(8.0)
                 .center_y()
                 .radius(8.0)
-                .fill(if on { look.selected } else { look.card })
+                .fill(if on { look.selected } else { look.raised })
                 .cursor(Cursor::Pointer)
                 .on_press_tx(move |s: &mut App, tx: &mut Tx| s.pick(pick, tx))
                 .child(text(name).font(BODY).color(look.text).grow(1.0).truncate())
