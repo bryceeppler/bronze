@@ -21,7 +21,7 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let opened: Rc<OnceCell<Store>> = Rc::default();
+    let opened: Rc<OnceCell<Store<Board>>> = Rc::default();
     let keep = opened.clone();
     let spec = AppSpec {
         min_size: Some((300.0, 400.0)),

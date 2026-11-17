@@ -6,30 +6,41 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, io, thread};
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::board::{Board, Note, Restored};
 
-const VERSION: u32 = 1;
-const FILE_NAME: &str = "notes.json";
+pub trait Document: Clone + Default + Send + 'static {
+    const FILE_NAME: &'static str;
+    const VERSION: u32;
+    type File: Serialize + DeserializeOwned;
 
-#[derive(Clone)]
-pub enum Store {
-    Memory,
-    File(Writer),
+    fn to_file(&self) -> Self::File;
+    fn from_file(file: Self::File) -> Self;
 }
 
-#[derive(Clone)]
-pub struct Writer(Sender<Message>);
+pub enum Store<T> {
+    Memory,
+    File(Writer<T>),
+}
 
-enum Message {
-    Save(Board),
+pub struct Writer<T>(Sender<Message<T>>);
+
+enum Message<T> {
+    Save(T),
     Flush(Sender<()>),
 }
 
 #[derive(Serialize, Deserialize)]
-struct NotesFile {
+struct Versioned<F> {
     version: u32,
+    #[serde(flatten)]
+    body: F,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct NotesFile {
     active: Option<String>,
     loose: Vec<NoteEntry>,
     sections: Vec<SectionEntry>,
@@ -63,34 +74,43 @@ pub fn data_dir() -> Option<PathBuf> {
     directories::ProjectDirs::from("ca", "bryce", "bronze").map(|dirs| dirs.data_dir().to_path_buf())
 }
 
-pub fn open(dir: &Path) -> (Board, Store) {
+pub fn open<T: Document>(dir: &Path) -> (T, Store<T>) {
     if let Err(error) = fs::create_dir_all(dir) {
-        eprintln!("bronze: cannot create {}: {error}; notes stay in memory", dir.display());
-        return (Board::default(), Store::Memory);
+        eprintln!("bronze: cannot create {}: {error}; {} stays in memory", dir.display(), T::FILE_NAME);
+        return (T::default(), Store::Memory);
     }
-    let path = dir.join(FILE_NAME);
+    let path = dir.join(T::FILE_NAME);
     match load(&path) {
-        Ok(board) => (board, Store::File(Writer::spawn(path))),
+        Ok(document) => (document, Store::File(Writer::spawn(path))),
         Err(why) => match set_aside(&path) {
             Ok(aside) => {
                 eprintln!("bronze: {} was unreadable ({why}); moved it to {}", path.display(), aside.display());
-                (Board::default(), Store::File(Writer::spawn(path)))
+                (T::default(), Store::File(Writer::spawn(path)))
             }
             Err(error) => {
                 eprintln!(
-                    "bronze: {} was unreadable ({why}) and could not be moved aside ({error}); notes stay in memory",
+                    "bronze: {} was unreadable ({why}) and could not be moved aside ({error}); it stays in memory",
                     path.display()
                 );
-                (Board::default(), Store::Memory)
+                (T::default(), Store::Memory)
             }
         },
     }
 }
 
-impl Store {
-    pub fn save(&self, board: &Board) {
+impl<T> Clone for Store<T> {
+    fn clone(&self) -> Store<T> {
+        match self {
+            Store::Memory => Store::Memory,
+            Store::File(Writer(tx)) => Store::File(Writer(tx.clone())),
+        }
+    }
+}
+
+impl<T: Document> Store<T> {
+    pub fn save(&self, document: &T) {
         if let Store::File(Writer(tx)) = self {
-            let _ = tx.send(Message::Save(board.clone()));
+            let _ = tx.send(Message::Save(document.clone()));
         }
     }
 
@@ -104,8 +124,8 @@ impl Store {
     }
 }
 
-impl Writer {
-    fn spawn(path: PathBuf) -> Writer {
+impl<T: Document> Writer<T> {
+    fn spawn(path: PathBuf) -> Writer<T> {
         let (tx, rx) = mpsc::channel();
         thread::Builder::new()
             .name("bronze-store".into())
@@ -115,28 +135,29 @@ impl Writer {
     }
 }
 
-fn write_loop(path: &Path, rx: &Receiver<Message>) {
+fn write_loop<T: Document>(path: &Path, rx: &Receiver<Message<T>>) {
     while let Ok(first) = rx.recv() {
         let mut latest = None;
         for message in std::iter::once(first).chain(rx.try_iter()) {
             match message {
-                Message::Save(board) => latest = Some(board),
+                Message::Save(document) => latest = Some(document),
                 Message::Flush(ack) => {
-                    if let Some(board) = latest.take() {
-                        write(path, &board);
+                    if let Some(document) = latest.take() {
+                        write(path, &document);
                     }
                     let _ = ack.send(());
                 }
             }
         }
-        if let Some(board) = latest {
-            write(path, &board);
+        if let Some(document) = latest {
+            write(path, &document);
         }
     }
 }
 
-fn write(path: &Path, board: &Board) {
-    let json = serde_json::to_string_pretty(&NotesFile::from(board)).expect("notes serialize");
+fn write<T: Document>(path: &Path, document: &T) {
+    let versioned = Versioned { version: T::VERSION, body: document.to_file() };
+    let json = serde_json::to_string_pretty(&versioned).expect("documents serialize");
     let temp = path.with_extension("json.tmp");
     let written = fs::write(&temp, json + "\n")
         .and_then(|()| fs::File::open(&temp)?.sync_all())
@@ -146,18 +167,18 @@ fn write(path: &Path, board: &Board) {
     }
 }
 
-fn load(path: &Path) -> Result<Board, Unreadable> {
+fn load<T: Document>(path: &Path) -> Result<T, Unreadable> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Board::default()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(T::default()),
         Err(error) => return Err(Unreadable::Io(error)),
     };
     let header: Header = serde_json::from_slice(&bytes).map_err(Unreadable::Malformed)?;
-    if header.version > VERSION {
+    if header.version > T::VERSION {
         return Err(Unreadable::Newer(header.version));
     }
-    let file: NotesFile = serde_json::from_slice(&bytes).map_err(Unreadable::Malformed)?;
-    Ok(file.into())
+    let file: Versioned<T::File> = serde_json::from_slice(&bytes).map_err(Unreadable::Malformed)?;
+    Ok(T::from_file(file.body))
 }
 
 fn set_aside(path: &Path) -> io::Result<PathBuf> {
@@ -183,23 +204,24 @@ impl From<&Note> for NoteEntry {
     }
 }
 
-impl From<&Board> for NotesFile {
-    fn from(board: &Board) -> NotesFile {
+impl Document for Board {
+    const FILE_NAME: &'static str = "notes.json";
+    const VERSION: u32 = 1;
+    type File = NotesFile;
+
+    fn to_file(&self) -> NotesFile {
         NotesFile {
-            version: VERSION,
-            active: board.active().map(|s| s.name.clone()),
-            loose: board.loose().iter().map(NoteEntry::from).collect(),
-            sections: board
+            active: self.active().map(|s| s.name.clone()),
+            loose: self.loose().iter().map(NoteEntry::from).collect(),
+            sections: self
                 .sections()
                 .iter()
                 .map(|s| SectionEntry { name: s.name.clone(), notes: s.notes.iter().map(NoteEntry::from).collect() })
                 .collect(),
         }
     }
-}
 
-impl From<NotesFile> for Board {
-    fn from(file: NotesFile) -> Board {
+    fn from_file(file: NotesFile) -> Board {
         let notes = |entries: Vec<NoteEntry>| entries.into_iter().map(|n| (n.text, n.done)).collect();
         Board::restore(Restored {
             loose: notes(file.loose),

@@ -28,13 +28,13 @@ fn sample() -> Board {
 #[test]
 fn a_saved_board_reloads_identically() {
     let dir = tempfile::tempdir().unwrap();
-    let (empty, store) = open(dir.path());
+    let (empty, store) = open::<Board>(dir.path());
     assert!(empty.notes().next().is_none());
     let board = sample();
     store.save(&board);
     store.flush();
 
-    let (reloaded, _) = open(dir.path());
+    let (reloaded, _) = open::<Board>(dir.path());
     assert_eq!(outline(&reloaded), outline(&board));
 }
 
@@ -45,7 +45,7 @@ fn an_unreadable_or_newer_file_is_moved_aside_not_overwritten() {
         let path = dir.path().join("notes.json");
         fs::write(&path, contents).unwrap();
 
-        let (board, store) = open(dir.path());
+        let (board, store) = open::<Board>(dir.path());
         assert!(board.notes().next().is_none());
         store.save(&sample());
         store.flush();
@@ -57,7 +57,7 @@ fn an_unreadable_or_newer_file_is_moved_aside_not_overwritten() {
             .collect();
         assert_eq!(aside.len(), 1, "one file moved aside for {contents:?}");
         assert_eq!(fs::read_to_string(&aside[0]).unwrap(), contents);
-        let (reloaded, _) = open(dir.path());
+        let (reloaded, _) = open::<Board>(dir.path());
         assert_eq!(outline(&reloaded), outline(&sample()));
     }
 }
@@ -65,7 +65,7 @@ fn an_unreadable_or_newer_file_is_moved_aside_not_overwritten() {
 #[test]
 fn the_file_is_pretty_versioned_json() {
     let dir = tempfile::tempdir().unwrap();
-    let (_, store) = open(dir.path());
+    let (_, store) = open::<Board>(dir.path());
     store.save(&sample());
     store.flush();
     let json: serde_json::Value =

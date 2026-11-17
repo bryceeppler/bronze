@@ -5,7 +5,7 @@ use crate::store::Store;
 
 pub struct App {
     board: Board,
-    store: Store,
+    store: Store<Board>,
     pub composer: TextEdit,
     pub search: TextEdit,
     pub overlay_field: TextEdit,
@@ -58,7 +58,7 @@ pub enum Pick {
 }
 
 impl App {
-    pub fn new(board: Board, store: Store) -> App {
+    pub fn new(board: Board, store: Store<Board>) -> App {
         App {
             board,
             store,
