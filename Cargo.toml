@@ -1,0 +1,19 @@
+[package]
+name = "bronze"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+rune = { git = "https://github.com/anomalyco/rune", rev = "cca5df6fafb4721d96fe105f126ebfd2ec351bb6" }
+
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "cca5df6fafb4721d96fe105f126ebfd2ec351bb6" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "cca5df6fafb4721d96fe105f126ebfd2ec351bb6" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "cca5df6fafb4721d96fe105f126ebfd2ec351bb6" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "cca5df6fafb4721d96fe105f126ebfd2ec351bb6" }
+accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "cca5df6fafb4721d96fe105f126ebfd2ec351bb6" }
+
+[profile.dev.package."*"]
+opt-level = 3
