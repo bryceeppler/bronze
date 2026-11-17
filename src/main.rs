@@ -34,7 +34,14 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let saved = match launch.data.or_else(|| (!headless).then(store::data_dir).flatten()) {
+    let data = launch.data.or_else(|| (!headless).then(store::data_dir).flatten());
+    if let Some(dir) = &data
+        && !headless
+        && !rune::single_instance(&instance_id(dir))
+    {
+        return;
+    }
+    let saved = match data {
         Some(dir) => open(&dir),
         None => {
             Saved { board: Board::default(), notes: Store::Memory, prefs: Prefs::default(), preferences: Store::Memory }
@@ -67,7 +74,11 @@ fn main() {
                 s.remember_frame();
             }
         })
-        .on_quit(|s, _| s.remember_frame());
+        .on_quit(|s, _| s.remember_frame())
+        .on_reopen(|s, _, tx| {
+            s.show_panel(tx);
+            true
+        });
     let handle = app.handle();
     let window = Window::new(handle.clone());
     let created = window.clone();
@@ -90,6 +101,16 @@ fn beside_right_edge(display: &Display) -> (i32, i32) {
     let x = width - (SIZE.0 + EDGE_MARGIN) * scale;
     let y = (height - SIZE.1 * scale) / 2.0;
     (display.position.0 + x.round() as i32, display.position.1 + y.round() as i32)
+}
+
+fn instance_id(data: &Path) -> String {
+    let path = std::path::absolute(data).unwrap_or_else(|_| data.to_path_buf());
+    let fnv1a = path
+        .as_os_str()
+        .as_encoded_bytes()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3));
+    format!("ca.bryce.bronze-{fnv1a:016x}")
 }
 
 fn open(dir: &Path) -> Saved {

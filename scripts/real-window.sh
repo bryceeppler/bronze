@@ -58,3 +58,11 @@ wait_for 'grep -q "\"x\": 140" "$data/preferences.json" 2> /dev/null' || fail "p
 kill "$app"; wait "$app" 2> /dev/null || true
 launch
 [ "$(corner)" = 140,90 ] && pass "relaunched where it was moved, 140,90" || fail "relaunch: corner $(corner)"
+
+xdotool key ctrl+alt+space
+wait_for '[ "$(map_state)" = IsUnMapped ]' || fail "hide before a second launch"
+timeout 10 target/debug/bronze --data "$data" > out/real-window-second.log 2>&1 \
+  && pass "a second launch on the same data folder exited by itself" || fail "second launch: kept running or failed"
+wait_for '[ "$(map_state)" = IsViewable ]' && pass "and brought the running panel back" || fail "second launch: map state $(map_state)"
+xdotool key ctrl+alt+space
+wait_for '[ "$(map_state)" = IsUnMapped ]' && pass "which one press of the chord hides again" || fail "hide after a second launch"
