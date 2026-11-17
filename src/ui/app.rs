@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
 
@@ -116,7 +117,7 @@ impl App {
         self.prefs.keep_on_top
     }
 
-    pub fn notes_path(&self) -> Option<&std::path::Path> {
+    pub fn notes_path(&self) -> Option<&Path> {
         self.notes.path()
     }
 

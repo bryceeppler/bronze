@@ -46,8 +46,8 @@ impl Global {
 
     pub fn what(self) -> &'static str {
         match self {
-            Global::Capture => "Capture the selected text, from any app",
-            Global::ShowOrHide => "Show or hide Bronze, from any app",
+            Global::Capture => "Capture selected text anywhere",
+            Global::ShowOrHide => "Show or hide Bronze anywhere",
         }
     }
 }

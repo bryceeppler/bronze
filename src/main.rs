@@ -34,7 +34,7 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let saved = match launch.data.clone().or_else(|| (!headless).then(store::data_dir).flatten()) {
+    let saved = match launch.data.or_else(|| (!headless).then(store::data_dir).flatten()) {
         Some(dir) => open(&dir),
         None => {
             Saved { board: Board::default(), notes: Store::Memory, prefs: Prefs::default(), preferences: Store::Memory }
