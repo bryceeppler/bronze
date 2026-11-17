@@ -94,6 +94,7 @@ fn section_header(s: &App, id: crate::board::SectionId, name: &str, look: &Look)
     let label = match &s.overlay {
         Overlay::Rename(renaming) if *renaming == id => text_input(&s.overlay_field, SECTION_LABEL)
             .key("rename")
+            .label("Section name")
             .single_line()
             .w(180.0)
             .color(look.text)
@@ -132,7 +133,7 @@ fn card(s: &App, note: &Note, look: &Look, geometry: Option<Rc<Geometry>>) -> El
         .child(checkbox(note, look))
         .child(body(note, look));
     let card = if selected {
-        card.border(1.0, look.accent.alpha(0.6))
+        card.border(1.0, look.accent.alpha(0.75))
     } else {
         card.border(look.hair, look.card_border).shadow(1.0, 2.0, look.shadow)
     };

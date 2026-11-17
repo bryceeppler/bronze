@@ -82,6 +82,7 @@ fn sheet(content: El, look: &Look) -> El {
 fn switcher(s: &App, picked: usize, look: &Look) -> El {
     let field = text_input(&s.overlay_field, BODY)
         .key("switcher-query")
+        .label("Section name")
         .single_line()
         .grow(1.0)
         .color(look.text)

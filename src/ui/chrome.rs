@@ -26,6 +26,7 @@ pub fn top_bar(s: &App, look: &Look, kit: &Kit, layer: &mut Vec<El>) -> El {
         .child(
             text_input(&s.search, BODY)
                 .key("search")
+                .label("Search notes")
                 .single_line()
                 .grow(1.0)
                 .color(look.text)
@@ -81,6 +82,7 @@ pub fn composer(s: &App, look: &Look) -> El {
     };
     let field = text_input(&s.composer, BODY)
         .key("composer")
+        .label("New note")
         .w_full()
         .color(look.text)
         .placeholder(placeholder, look.faint)
