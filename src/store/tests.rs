@@ -95,17 +95,25 @@ fn preferences_reload_with_the_window_frame() {
 #[test]
 fn a_data_folder_has_one_owner_however_it_is_named() {
     let dir = tempfile::tempdir().unwrap();
-    let data = dir.path().join("data");
-    let owner = claim(&data).ok().flatten().expect("the first claim owns the folder");
+    let owner = claim(dir.path()).ok().expect("the first claim owns the folder");
 
-    assert!(claim(&data).is_err());
+    assert!(matches!(claim(dir.path()), Err(Unowned::Taken)));
     #[cfg(unix)]
     {
-        let alias = dir.path().join("alias");
-        std::os::unix::fs::symlink(&data, &alias).unwrap();
-        assert!(claim(&alias).is_err());
+        let alias = dir.path().with_extension("alias");
+        std::os::unix::fs::symlink(dir.path(), &alias).unwrap();
+        assert!(matches!(claim(&alias), Err(Unowned::Taken)));
+        fs::remove_file(alias).unwrap();
     }
 
     drop(owner);
-    assert!(claim(&data).is_ok_and(|claim| claim.is_some()));
+    assert!(claim(dir.path()).is_ok());
+}
+
+#[test]
+fn a_folder_that_cannot_be_locked_is_not_owned() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("bronze.lock")).unwrap();
+
+    assert!(matches!(claim(dir.path()), Err(Unowned::Unlockable(_))));
 }

@@ -100,16 +100,31 @@ pub fn data_dir() -> Option<PathBuf> {
     directories::ProjectDirs::from("ca", "bryce", "bronze").map(|dirs| dirs.data_dir().to_path_buf())
 }
 
-pub struct Taken;
+pub enum Unowned {
+    Taken,
+    Unlockable(io::Error),
+}
 
-pub fn claim(dir: &Path) -> Result<Option<fs::File>, Taken> {
-    let lock = fs::create_dir_all(dir)
-        .and_then(|()| fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("bronze.lock")));
-    let Ok(lock) = lock else { return Ok(None) };
+impl std::fmt::Display for Unowned {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Unowned::Taken => write!(f, "another Bronze already runs on it"),
+            Unowned::Unlockable(error) => write!(f, "it cannot be locked: {error}"),
+        }
+    }
+}
+
+pub fn claim(dir: &Path) -> Result<fs::File, Unowned> {
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(dir.join("bronze.lock"))
+        .map_err(Unowned::Unlockable)?;
     match lock.try_lock() {
-        Ok(()) => Ok(Some(lock)),
-        Err(fs::TryLockError::WouldBlock) => Err(Taken),
-        Err(fs::TryLockError::Error(_)) => Ok(None),
+        Ok(()) => Ok(lock),
+        Err(fs::TryLockError::WouldBlock) => Err(Unowned::Taken),
+        Err(fs::TryLockError::Error(error)) => Err(Unowned::Unlockable(error)),
     }
 }
 

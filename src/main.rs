@@ -35,18 +35,12 @@ fn main() {
         }
     };
     let data = launch.data.or_else(|| (!headless).then(store::data_dir).flatten());
-    let _owned = match &data {
-        Some(dir) => {
-            if !headless && !rune::single_instance(&instance_id(dir)) {
-                return;
-            }
-            match store::claim(dir) {
-                Ok(lock) => lock,
-                Err(store::Taken) => {
-                    eprintln!("bronze: another Bronze already runs on {}", dir.display());
-                    std::process::exit(1);
-                }
-            }
+    let _owned = match data.as_deref().map(|dir| own(dir, headless)) {
+        Some(Ok(Owned::Folder(lock))) => Some(lock),
+        Some(Ok(Owned::ByTheRunningBronze)) => return,
+        Some(Err(message)) => {
+            eprintln!("bronze: {message}");
+            std::process::exit(1);
         }
         None => None,
     };
@@ -112,10 +106,23 @@ fn beside_right_edge(display: &Display) -> (i32, i32) {
     (display.position.0 + x.round() as i32, display.position.1 + y.round() as i32)
 }
 
-fn instance_id(data: &Path) -> String {
-    let path =
-        std::fs::canonicalize(data).or_else(|_| std::path::absolute(data)).unwrap_or_else(|_| data.to_path_buf());
-    let fnv1a = path
+enum Owned {
+    Folder(std::fs::File),
+    ByTheRunningBronze,
+}
+
+fn own(dir: &Path, headless: bool) -> Result<Owned, String> {
+    let folder = std::fs::create_dir_all(dir)
+        .and_then(|()| std::fs::canonicalize(dir))
+        .map_err(|error| format!("cannot use {} for notes: {error}", dir.display()))?;
+    if !headless && !rune::single_instance(&instance_id(&folder)) {
+        return Ok(Owned::ByTheRunningBronze);
+    }
+    store::claim(&folder).map(Owned::Folder).map_err(|why| format!("cannot use {} for notes: {why}", dir.display()))
+}
+
+fn instance_id(folder: &Path) -> String {
+    let fnv1a = folder
         .as_os_str()
         .as_encoded_bytes()
         .iter()
