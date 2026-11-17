@@ -2,4 +2,47 @@
 
 # bronze
 
-Created in [T3 Code](https://t3.codes).
+A capture panel for AI-assisted work: part to-do list, part clipboard, part scratchpad.
+Select text in any app, press a shortcut, and it lands in Bronze.
+Queue the prompts you want to try next, copy them back out, and check them off.
+
+Bronze is written in Rust on [Rune](https://github.com/anomalyco/rune) and is inspired by shadcn's Copper, which is Mac only.
+It is an independent project and is not affiliated with shadcn.
+
+Notes stay in one local file.
+There is no account, no sync and no telemetry.
+
+## Run
+
+```sh
+cargo run
+```
+
+Linux needs the packages Rune lists under "Linux" in its README.
+`--data <dir>` keeps notes and preferences in a folder of your choice.
+
+## Shortcuts
+
+| Action | Shortcut |
+| --- | --- |
+| Capture the selected text, from any app | `Ctrl+Alt+C` |
+| Show or hide Bronze, from any app | `Ctrl+Alt+Space` |
+| Create or open a section | type `# Name` |
+| Go to a section | `Ctrl/Cmd+K` |
+| Copy the selected notes | `Ctrl/Cmd+C` |
+| Merge the selected notes | `Ctrl/Cmd+J` |
+| Check or uncheck | `Space` |
+| Delete the selected notes | `Backspace` |
+| Clear the selection, then hide | `Esc` |
+
+On Linux, capture reads the text you have selected.
+On macOS and Windows it reads the clipboard for now, so copy first.
+
+## Check
+
+```sh
+./scripts/check.sh        # format, lint, tests, every scene rendered headless, scripted runs
+./scripts/real-window.sh  # a real window under Xvfb: capture, show and hide, remembered position
+```
+
+Renders and element trees land in `out/`.
