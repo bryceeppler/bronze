@@ -258,6 +258,24 @@ fn picking_a_section_focuses_the_list_on_it() {
 }
 
 #[test]
+fn the_switcher_scrolls_to_keep_the_picked_section_in_the_window() {
+    let mut board = Board::default();
+    for number in 1..=25 {
+        board.submit(&format!("# Section {number:02}"));
+    }
+    let mut p = Panel::with(Saved { board, notes: Store::Memory, prefs: Prefs::default(), preferences: Store::Memory });
+    p.command('k');
+    for _ in 0..25 {
+        p.key(Key::Down, PLAIN);
+    }
+    let last = p.rt.elements().into_iter().find(|e| e.key.as_deref() == Some("pick-25")).unwrap();
+    assert!(last.rect[1] >= 0.0 && last.rect[1] + last.rect[3] <= 640.0, "picked row at {:?}", last.rect);
+
+    p.key(Key::Enter, PLAIN);
+    assert_eq!(p.board().active().map(|s| s.name.as_str()), Some("Section 25"));
+}
+
+#[test]
 fn a_section_header_renames_and_deletes_its_section() {
     let mut p = Panel::new();
     p.submit("# Drafts");

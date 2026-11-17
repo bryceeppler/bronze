@@ -403,10 +403,11 @@ impl App {
         };
     }
 
-    pub fn step_switcher(&mut self, by: isize) {
+    pub fn step_switcher(&mut self, by: isize, tx: &mut Tx) {
         let count = self.picks().len() as isize;
         if let Overlay::Switcher { picked } = &mut self.overlay {
             *picked = (*picked as isize + by).rem_euclid(count.max(1)) as usize;
+            tx.scroll_into_view(pick_key(*picked));
         }
     }
 
@@ -461,6 +462,10 @@ fn focused_field(text: &str) -> TextEdit {
 }
 
 pub const LIST_KEY: &str = "list";
+
+pub fn pick_key(index: usize) -> String {
+    format!("pick-{index}")
+}
 
 pub fn card_key(id: NoteId) -> String {
     format!("note-{id}")

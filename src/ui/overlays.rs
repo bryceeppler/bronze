@@ -1,8 +1,8 @@
 use rune::tok::type_;
-use rune::{Cursor, El, Key, KeyEvent, Tx, col, el, icon, row, text, text_input};
+use rune::{Cursor, El, Key, KeyEvent, ScrollSpec, Tx, col, el, icon, row, text, text_input};
 use rune_kit::{Kit, Menu, MenuItem, context_menu};
 
-use super::app::{App, Overlay, Pick};
+use super::app::{App, Overlay, Pick, pick_key};
 use super::chrome::{BODY, clear_of_caret};
 use super::commands;
 use super::icons;
@@ -69,14 +69,26 @@ fn note_menu(s: &App, menu: Menu) -> Menu {
 }
 
 fn sheet(content: El, look: &Look) -> El {
-    col().key("sheet").absolute(0.0, 0.0).w_full().h_full().px(16.0).pt(50.0).items_stretch().fill(look.scrim).child(
-        content
-            .radius(14.0)
-            .fill(look.raised)
-            .border(look.hair, look.card_border)
-            .box_shadow(look.popover_shadow())
-            .modal(true, |s: &mut App| s.overlay = Overlay::None),
-    )
+    col()
+        .key("sheet")
+        .absolute(0.0, 0.0)
+        .w_full()
+        .h_full()
+        .px(16.0)
+        .pt(50.0)
+        .pb(16.0)
+        .items_stretch()
+        .fill(look.scrim)
+        .child(
+            content
+                .shrink()
+                .min_h(0.0)
+                .radius(14.0)
+                .fill(look.raised)
+                .border(look.hair, look.card_border)
+                .box_shadow(look.popover_shadow())
+                .modal(true, |s: &mut App| s.overlay = Overlay::None),
+        )
 }
 
 fn switcher(s: &App, picked: usize, look: &Look) -> El {
@@ -99,7 +111,7 @@ fn switcher(s: &App, picked: usize, look: &Look) -> El {
         let on = i == picked;
         rows = rows.child(
             row()
-                .key(format!("pick-{i}"))
+                .key(pick_key(i))
                 .role("option")
                 .h(30.0)
                 .px(10.0)
@@ -119,13 +131,13 @@ fn switcher(s: &App, picked: usize, look: &Look) -> El {
             row().h(40.0).px(12.0).gap(8.0).center_y().child(icon(&icons::SEARCH, 14.0).color(look.faint)).child(field),
         )
         .child(el().w_full().h(look.hair).fill(look.hairline))
-        .child(rows)
+        .child(col().key("switcher-list").shrink().min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(rows))
 }
 
 fn switcher_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
     match ev.key {
-        Key::Up => s.step_switcher(-1),
-        Key::Down => s.step_switcher(1),
+        Key::Up => s.step_switcher(-1, tx),
+        Key::Down => s.step_switcher(1, tx),
         Key::Enter => s.pick_switcher(tx),
         Key::Escape => s.overlay = Overlay::None,
         _ => return false,
