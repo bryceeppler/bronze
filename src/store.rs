@@ -100,6 +100,19 @@ pub fn data_dir() -> Option<PathBuf> {
     directories::ProjectDirs::from("ca", "bryce", "bronze").map(|dirs| dirs.data_dir().to_path_buf())
 }
 
+pub struct Taken;
+
+pub fn claim(dir: &Path) -> Result<Option<fs::File>, Taken> {
+    let lock = fs::create_dir_all(dir)
+        .and_then(|()| fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("bronze.lock")));
+    let Ok(lock) = lock else { return Ok(None) };
+    match lock.try_lock() {
+        Ok(()) => Ok(Some(lock)),
+        Err(fs::TryLockError::WouldBlock) => Err(Taken),
+        Err(fs::TryLockError::Error(_)) => Ok(None),
+    }
+}
+
 pub fn open<T: Document>(dir: &Path) -> (T, Store<T>) {
     if let Err(error) = fs::create_dir_all(dir) {
         eprintln!("bronze: cannot create {}: {error}; {} stays in memory", dir.display(), T::FILE_NAME);

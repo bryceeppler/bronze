@@ -91,3 +91,21 @@ fn preferences_reload_with_the_window_frame() {
     let (reloaded, _) = open::<Prefs>(dir.path());
     assert_eq!(reloaded, moved);
 }
+
+#[test]
+fn a_data_folder_has_one_owner_however_it_is_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let owner = claim(&data).ok().flatten().expect("the first claim owns the folder");
+
+    assert!(claim(&data).is_err());
+    #[cfg(unix)]
+    {
+        let alias = dir.path().join("alias");
+        std::os::unix::fs::symlink(&data, &alias).unwrap();
+        assert!(claim(&alias).is_err());
+    }
+
+    drop(owner);
+    assert!(claim(&data).is_ok_and(|claim| claim.is_some()));
+}

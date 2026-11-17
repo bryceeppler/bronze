@@ -35,12 +35,21 @@ fn main() {
         }
     };
     let data = launch.data.or_else(|| (!headless).then(store::data_dir).flatten());
-    if let Some(dir) = &data
-        && !headless
-        && !rune::single_instance(&instance_id(dir))
-    {
-        return;
-    }
+    let _owned = match &data {
+        Some(dir) => {
+            if !headless && !rune::single_instance(&instance_id(dir)) {
+                return;
+            }
+            match store::claim(dir) {
+                Ok(lock) => lock,
+                Err(store::Taken) => {
+                    eprintln!("bronze: another Bronze already runs on {}", dir.display());
+                    std::process::exit(1);
+                }
+            }
+        }
+        None => None,
+    };
     let saved = match data {
         Some(dir) => open(&dir),
         None => {
@@ -104,7 +113,8 @@ fn beside_right_edge(display: &Display) -> (i32, i32) {
 }
 
 fn instance_id(data: &Path) -> String {
-    let path = std::path::absolute(data).unwrap_or_else(|_| data.to_path_buf());
+    let path =
+        std::fs::canonicalize(data).or_else(|_| std::path::absolute(data)).unwrap_or_else(|_| data.to_path_buf());
     let fnv1a = path
         .as_os_str()
         .as_encoded_bytes()
