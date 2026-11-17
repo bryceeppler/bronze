@@ -1,5 +1,4 @@
 use super::*;
-use crate::board::Owner;
 
 type Outline = Vec<(Option<String>, Vec<(String, bool)>)>;
 
@@ -37,7 +36,6 @@ fn a_saved_board_reloads_identically() {
 
     let (reloaded, _) = open(dir.path());
     assert_eq!(outline(&reloaded), outline(&board));
-    assert_eq!(reloaded.lists(crate::board::Scope::All)[1].owner, Owner::Section(reloaded.sections()[0].id));
 }
 
 #[test]

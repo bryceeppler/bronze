@@ -9,7 +9,7 @@ pub struct App {
     pub composer: TextEdit,
     pub search: TextEdit,
     pub overlay_field: TextEdit,
-    pub selection: Selection,
+    selection: Selection,
     pub scope: Scope,
     pub overlay: Overlay,
     pub dragging: Option<Dragging>,
