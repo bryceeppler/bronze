@@ -447,6 +447,7 @@ dependencies = [
 name = "bronze"
 version = "0.1.0"
 dependencies = [
+ "arboard",
  "directories",
  "rune",
  "rune-kit",

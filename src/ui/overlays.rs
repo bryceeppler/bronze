@@ -90,7 +90,7 @@ fn switcher(s: &App, picked: usize, look: &Look) -> El {
         .on_edit(|s: &mut App| &mut s.overlay_field)
         .on_input_change(|s: &mut App, _| s.overlay = Overlay::Switcher { picked: 0 })
         .on_input_key(switcher_key);
-    let current = match s.scope {
+    let current = match s.scope() {
         Scope::All => Pick::All,
         Scope::Active => s.board().active().map_or(Pick::All, |section| Pick::Section(section.id)),
     };

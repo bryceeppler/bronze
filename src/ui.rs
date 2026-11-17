@@ -9,14 +9,18 @@ mod scenes;
 mod strike;
 #[cfg(test)]
 mod tests;
+mod window;
 
 use rune::{Cx, El, col};
 
-pub use app::App;
+pub use app::{App, Saved};
 pub use commands::on_key;
 pub use scenes::SCENES;
+pub use window::Window;
 
 use look::Look;
+
+pub const WINDOW_RADIUS: f32 = if cfg!(target_os = "macos") { 12.0 } else { 0.0 };
 
 pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     let look = Look::new(cx.system_dark(), cx.env().scale);
@@ -27,9 +31,13 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         .w_full()
         .h_full()
         .fill(look.bg)
-        .padding(12.0)
+        .radius(WINDOW_RADIUS)
+        .border(look.hair, look.card_border)
+        .px(12.0)
+        .pb(12.0)
         .child(chrome::top_bar(s, &look, &kit, &mut layer))
         .child(list::list(s, cx, &look))
+        .children(chrome::notice(s, &look))
         .child(chrome::composer(s, &look));
     overlays::mount(s, &look, &kit, &mut layer);
     rune_kit::root(panel, layer)

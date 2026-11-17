@@ -1,18 +1,47 @@
-use rune::{Mods, PointerPress, TextEdit, Tx};
+use std::rc::Rc;
+use std::sync::mpsc::{self, Receiver, Sender};
 
+use rune::{Mods, PointerPress, ShortcutError, TextEdit, Tx};
+
+use super::commands::{self, Global};
+use super::window::Window;
 use crate::board::{Board, Note, NoteId, Owner, Place, Scope, SectionId, Submitted};
+use crate::platform::Platform;
+use crate::prefs::Prefs;
 use crate::store::Store;
+
+const NOTICE_SECONDS: f64 = 2.5;
 
 pub struct App {
     board: Board,
-    store: Store<Board>,
+    notes: Store<Board>,
+    prefs: Prefs,
+    preferences: Store<Prefs>,
+    platform: Rc<dyn Platform>,
+    window: Window,
+    selections: (Sender<Option<String>>, Receiver<Option<String>>),
+    pub panel: Panel,
+    nothing_selected_until: Option<f64>,
+    unavailable: Vec<(Global, ShortcutError)>,
     pub composer: TextEdit,
     pub search: TextEdit,
     pub overlay_field: TextEdit,
     selection: Selection,
-    pub scope: Scope,
     pub overlay: Overlay,
     pub dragging: Option<Dragging>,
+}
+
+pub struct Saved {
+    pub board: Board,
+    pub notes: Store<Board>,
+    pub prefs: Prefs,
+    pub preferences: Store<Prefs>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Panel {
+    Shown,
+    Hidden,
 }
 
 #[derive(Default)]
@@ -58,18 +87,155 @@ pub enum Pick {
 }
 
 impl App {
-    pub fn new(board: Board, store: Store<Board>) -> App {
+    pub fn new(saved: Saved, platform: Rc<dyn Platform>, window: Window) -> App {
         App {
-            board,
-            store,
+            board: saved.board,
+            notes: saved.notes,
+            prefs: saved.prefs,
+            preferences: saved.preferences,
+            platform,
+            window,
+            selections: mpsc::channel(),
+            panel: Panel::Shown,
+            nothing_selected_until: None,
+            unavailable: Vec::new(),
             composer: focused_field(""),
             search: TextEdit::new(""),
             overlay_field: TextEdit::new(""),
             selection: Selection::default(),
-            scope: Scope::All,
             overlay: Overlay::None,
             dragging: None,
         }
+    }
+
+    pub fn scope(&self) -> Scope {
+        self.prefs.scope
+    }
+
+    pub fn keeps_on_top(&self) -> bool {
+        self.prefs.keep_on_top
+    }
+
+    pub fn notes_path(&self) -> Option<&std::path::Path> {
+        self.notes.path()
+    }
+
+    fn set_prefs(&mut self, change: impl FnOnce(&mut Prefs)) {
+        change(&mut self.prefs);
+        self.preferences.save(&self.prefs);
+    }
+
+    pub fn register_shortcuts(&mut self) {
+        for global in Global::ALL {
+            if let Err(error) = self.window.register(global) {
+                self.shortcut_unavailable(global, error);
+            }
+        }
+    }
+
+    pub fn shortcut_unavailable(&mut self, global: Global, error: ShortcutError) {
+        eprintln!("bronze: cannot register {}: {error}", global.chord());
+        self.unavailable.push((global, error));
+    }
+
+    pub fn global(&mut self, global: Global, tx: &mut Tx) {
+        match (global, self.panel) {
+            (Global::Capture, _) => self.capture(),
+            (Global::ShowOrHide, Panel::Shown) => self.hide_panel(),
+            (Global::ShowOrHide, Panel::Hidden) => self.show_panel(tx),
+        }
+    }
+
+    fn capture(&self) {
+        let (send, wake) = (self.selections.0.clone(), self.window.waker());
+        self.platform.read_selection(Box::new(move |text| {
+            if send.send(text).is_ok() {
+                wake();
+            }
+        }));
+    }
+
+    pub fn poll(&mut self, clock: f64, tx: &mut Tx) -> bool {
+        let mut changed = false;
+        while let Ok(text) = self.selections.1.try_recv() {
+            self.captured(text, tx);
+            changed = true;
+        }
+        if self.nothing_selected_until.is_some_and(|until| clock >= until) {
+            self.nothing_selected_until = None;
+            changed = true;
+        }
+        changed
+    }
+
+    fn captured(&mut self, text: Option<String>, tx: &mut Tx) {
+        match text.filter(|text| !text.trim().is_empty()) {
+            Some(text) => {
+                let id = self.edit(|board| board.capture(text));
+                self.nothing_selected_until = None;
+                tx.scroll_into_view(card_key(id));
+            }
+            None => {
+                let until = tx.clock() + NOTICE_SECONDS;
+                self.nothing_selected_until = Some(until);
+                tx.wake_at(until);
+            }
+        }
+    }
+
+    pub fn notice(&self) -> Option<String> {
+        if self.nothing_selected_until.is_some() {
+            return Some("Nothing is selected to capture".to_owned());
+        }
+        let (global, error) = self.unavailable.first()?;
+        let (name, chord) = (global.name(), commands::label(global.chord()));
+        Some(match error {
+            ShortcutError::Conflict => format!("{name} {chord} is taken by another app"),
+            _ => format!("{name} {chord} is unavailable here"),
+        })
+    }
+
+    pub fn hide_panel(&mut self) {
+        self.remember_frame();
+        self.window.hide();
+        self.overlay = Overlay::None;
+        self.panel = Panel::Hidden;
+    }
+
+    pub fn show_panel(&mut self, tx: &mut Tx) {
+        self.window.open();
+        self.panel = Panel::Shown;
+        tx.focus_when_shown("composer", false);
+    }
+
+    pub fn escape(&mut self) {
+        if self.deselect() {
+            return;
+        }
+        match self.overlay {
+            Overlay::None => self.hide_panel(),
+            _ => self.overlay = Overlay::None,
+        }
+    }
+
+    pub fn toggle_keep_on_top(&mut self) {
+        let on = !self.prefs.keep_on_top;
+        self.set_prefs(|prefs| prefs.keep_on_top = on);
+        self.window.keep_on_top(on);
+        self.overlay = Overlay::None;
+    }
+
+    pub fn remember_frame(&mut self) {
+        if let Some(frame) = self.window.frame().filter(|frame| self.prefs.frame != Some(*frame)) {
+            self.set_prefs(|prefs| prefs.frame = Some(frame));
+        }
+    }
+
+    pub fn reveal_notes(&mut self) {
+        if let Some(path) = self.notes.path() {
+            self.platform.reveal(path);
+        }
+        self.overlay = Overlay::None;
     }
 
     pub fn board(&self) -> &Board {
@@ -78,7 +244,7 @@ impl App {
 
     pub fn edit<R>(&mut self, change: impl FnOnce(&mut Board) -> R) -> R {
         let result = change(&mut self.board);
-        self.store.save(&self.board);
+        self.notes.save(&self.board);
         let board = &self.board;
         self.selection.ids.retain(|id| board.notes().any(|n| n.id == *id));
         result
@@ -87,7 +253,7 @@ impl App {
     pub fn shown(&self) -> Vec<Shown<'_>> {
         let query = self.search.text.trim().to_lowercase();
         self.board
-            .lists(self.scope)
+            .lists(self.prefs.scope)
             .into_iter()
             .map(|list| Shown {
                 owner: list.owner,
@@ -183,26 +349,27 @@ impl App {
     }
 
     pub fn clear_done(&mut self) {
-        let scope = self.scope;
+        let scope = self.prefs.scope;
         self.edit(|board| board.clear_done(scope));
         self.overlay = Overlay::None;
     }
 
     pub fn pick(&mut self, pick: Pick, tx: &mut Tx) {
-        match pick {
-            Pick::All => self.scope = Scope::All,
+        let scope = match pick {
+            Pick::All => Scope::All,
             Pick::Section(id) => {
                 self.edit(|board| board.activate(id));
-                self.scope = Scope::Active;
+                Scope::Active
             }
-        }
+        };
+        self.set_prefs(|prefs| prefs.scope = scope);
         self.overlay = Overlay::None;
         self.keep_shown_selected();
         tx.scroll_to_instant(LIST_KEY, 0.0, 0.0);
     }
 
-    pub fn show(&mut self, scope: Scope, tx: &mut Tx) {
-        self.scope = scope;
+    pub fn set_scope(&mut self, scope: Scope, tx: &mut Tx) {
+        self.set_prefs(|prefs| prefs.scope = scope);
         self.overlay = Overlay::None;
         self.keep_shown_selected();
         tx.scroll_to_instant(LIST_KEY, 0.0, 0.0);

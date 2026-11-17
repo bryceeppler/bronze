@@ -75,3 +75,19 @@ fn the_file_is_pretty_versioned_json() {
     assert_eq!(json["loose"][0], serde_json::json!({"text": "loose one", "done": true}));
     assert_eq!(json["sections"][1]["name"], "Errands");
 }
+
+#[test]
+fn preferences_reload_with_the_window_frame() {
+    let dir = tempfile::tempdir().unwrap();
+    let (defaults, store) = open::<Prefs>(dir.path());
+    assert_eq!(defaults, Prefs::default());
+    let moved = Prefs {
+        keep_on_top: false,
+        scope: Scope::Active,
+        frame: Some(Frame { position: (-1200, 85), size: (380.0, 700.0) }),
+    };
+    store.save(&moved);
+    store.flush();
+    let (reloaded, _) = open::<Prefs>(dir.path());
+    assert_eq!(reloaded, moved);
+}

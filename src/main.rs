@@ -1,54 +1,117 @@
 mod board;
 mod inline;
+mod platform;
+mod prefs;
 mod store;
 mod ui;
 
-use std::cell::OnceCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use rune::AppSpec;
+use rune::{AppSpec, Display, MacWindowOptions, WindowOptions, WindowSpec};
 
 use board::Board;
+use platform::{Fake, Native, Platform};
+use prefs::Prefs;
 use store::Store;
-use ui::App;
+use ui::{App, Saved, Window};
+
+const SIZE: (f32, f32) = (360.0, 640.0);
+const MIN_SIZE: (f32, f32) = (300.0, 400.0);
+const EDGE_MARGIN: f32 = 16.0;
+
+struct Launch {
+    data: Option<PathBuf>,
+    selection: Option<String>,
+}
 
 fn main() {
-    let data = match data_dir_arg(rune::extra_args()) {
-        Ok(data) => data,
+    let headless = rune::is_headless();
+    let launch = match Launch::parse(rune::extra_args(), headless) {
+        Ok(launch) => launch,
         Err(message) => {
             eprintln!("bronze: {message}");
             std::process::exit(2);
         }
     };
-    let opened: Rc<OnceCell<Store<Board>>> = Rc::default();
-    let keep = opened.clone();
+    let saved = match launch.data.clone().or_else(|| (!headless).then(store::data_dir).flatten()) {
+        Some(dir) => open(&dir),
+        None => {
+            Saved { board: Board::default(), notes: Store::Memory, prefs: Prefs::default(), preferences: Store::Memory }
+        }
+    };
+    let platform: Rc<dyn Platform> =
+        if headless { Rc::new(Fake::selecting(launch.selection)) } else { Rc::new(Native) };
+    let stores = (saved.notes.clone(), saved.preferences.clone());
+    let frame = saved.prefs.frame;
+    let options = WindowOptions {
+        borderless: true,
+        transparent: cfg!(target_os = "macos"),
+        always_on_top: saved.prefs.keep_on_top,
+        position: frame.map(|f| f.position),
+        min_size: Some(MIN_SIZE),
+        ..WindowOptions::default()
+    };
     let spec = AppSpec {
-        min_size: Some((300.0, 400.0)),
+        min_size: Some(MIN_SIZE),
         scenes: ui::SCENES,
         on_key: Some(ui::on_key),
-        ..AppSpec::new("Bronze", (360.0, 640.0), || App::new(Board::default(), Store::Memory), ui::view)
+        poll: Some(|s, clock, tx| s.poll(clock, tx)),
+        ..AppSpec::new("Bronze", frame.map_or(SIZE, |f| f.size), || unreachable!("init builds the state"), ui::view)
     };
-    rune::App::new(spec)
-        .init(move || {
-            let dir = data.or_else(|| rune::tooling::headless_run().is_none().then(store::data_dir).flatten());
-            let (board, store) = match dir {
-                Some(dir) => store::open(&dir),
-                None => (Board::default(), Store::Memory),
-            };
-            let _ = keep.set(store.clone());
-            App::new(board, store)
+    let app = rune::App::new(spec)
+        .configured_options(options.macos(MacWindowOptions::default().corner_radius(ui::WINDOW_RADIUS)))
+        .keep_running()
+        .on_focus(|s, focused, _| {
+            if !focused {
+                s.remember_frame();
+            }
         })
-        .run();
-    if let Some(store) = opened.get() {
-        store.flush();
-    }
+        .on_quit(|s, _| s.remember_frame());
+    let handle = app.handle();
+    let window = Window::new(handle.clone());
+    let created = window.clone();
+    let app = app.on_window(move |native| created.created(native)).init(move || App::new(saved, platform, window));
+    handle.update(|s, _| s.register_shortcuts());
+    rune::run_windows(move |displays| {
+        let mut window = WindowSpec::from_app("main", app);
+        if frame.is_none() {
+            window.options.position = displays.iter().find(|d| d.primary).or(displays.first()).map(beside_right_edge);
+        }
+        [window]
+    });
+    stores.0.flush();
+    stores.1.flush();
 }
 
-fn data_dir_arg(args: &[String]) -> Result<Option<PathBuf>, String> {
-    match args {
-        [] => Ok(None),
-        [flag, dir] if flag == "--data" => Ok(Some(PathBuf::from(dir))),
-        _ => Err(format!("unexpected arguments {args:?}; usage: bronze [--data <dir>]")),
+fn beside_right_edge(display: &Display) -> (i32, i32) {
+    let scale = display.scale as f32;
+    let (width, height) = (display.size.0 as f32, display.size.1 as f32);
+    let x = width - (SIZE.0 + EDGE_MARGIN) * scale;
+    let y = (height - SIZE.1 * scale) / 2.0;
+    (display.position.0 + x.round() as i32, display.position.1 + y.round() as i32)
+}
+
+fn open(dir: &Path) -> Saved {
+    let (board, notes) = store::open::<Board>(dir);
+    let (prefs, preferences) = store::open::<Prefs>(dir);
+    Saved { board, notes, prefs, preferences }
+}
+
+impl Launch {
+    fn parse(args: &[String], headless: bool) -> Result<Launch, String> {
+        let mut launch = Launch { data: None, selection: None };
+        for pair in args.chunks(2) {
+            match pair {
+                [flag, dir] if flag == "--data" => launch.data = Some(PathBuf::from(dir)),
+                [flag, text] if flag == "--selection" && headless => launch.selection = Some(text.clone()),
+                _ => {
+                    return Err(format!(
+                        "unexpected arguments {args:?}; usage: bronze [--data <dir>] [--selection <text>, headless runs only]"
+                    ));
+                }
+            }
+        }
+        Ok(launch)
     }
 }

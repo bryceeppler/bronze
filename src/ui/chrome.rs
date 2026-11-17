@@ -1,8 +1,9 @@
 use rune::tok::type_;
-use rune::{Cursor, El, Shadow, Tx, auto_grow, el, icon, row, text_input};
+use rune::{Cursor, El, Shadow, Tx, auto_grow, el, icon, row, text, text_input};
 use rune_kit::{Kit, Menu, MenuItem, Placement};
 
 use super::app::{App, Overlay};
+use super::commands;
 use super::icons;
 use super::look::Look;
 use crate::board::{Scope, SectionId};
@@ -50,7 +51,16 @@ pub fn top_bar(s: &App, look: &Look, kit: &Kit, layer: &mut Vec<El>) -> El {
         .cursor(Cursor::Pointer)
         .on_press(|s: &mut App| s.overlay = Overlay::Menu)
         .child(icon(&icons::MORE, 16.0).color(look.muted));
-    row().key("top").w_full().gap(8.0).center_y().child(search).child(overflow_menu(s, more, kit, layer))
+    row()
+        .key("top")
+        .w_full()
+        .pt(12.0)
+        .pb(2.0)
+        .gap(8.0)
+        .center_y()
+        .window_drag()
+        .child(search)
+        .child(overflow_menu(s, more, kit, layer))
 }
 
 fn overflow_menu(s: &App, trigger: El, kit: &Kit, layer: &mut Vec<El>) -> El {
@@ -62,12 +72,13 @@ fn overflow_menu(s: &App, trigger: El, kit: &Kit, layer: &mut Vec<El>) -> El {
         .open(matches!(s.overlay, Overlay::Menu))
         .on_close(|s: &mut App| s.overlay = Overlay::None);
     if let Some(active) = board.active() {
-        let (label, scope) = match s.scope {
+        let (label, scope) = match s.scope() {
             Scope::All => (format!("Show Only {}", active.name), Scope::Active),
             Scope::Active => ("Show All Sections".to_owned(), Scope::All),
         };
-        menu =
-            menu.item(MenuItem::new(label).on_select_tx(move |s: &mut App, tx: &mut Tx| s.show(scope, tx))).separator();
+        menu = menu
+            .item(MenuItem::new(label).on_select_tx(move |s: &mut App, tx: &mut Tx| s.set_scope(scope, tx)))
+            .separator();
     }
     if !board.sections().is_empty() {
         let target = board.active().map(|section| section.id);
@@ -79,11 +90,40 @@ fn overflow_menu(s: &App, trigger: El, kit: &Kit, layer: &mut Vec<El>) -> El {
     }
     menu.item(MenuItem::new("Clear Done").on_select(|s: &mut App| s.clear_done()))
         .item(MenuItem::new("Keyboard Shortcuts").on_select(|s: &mut App| s.overlay = Overlay::Shortcuts))
+        .separator()
+        .group_label("Window")
+        .item(MenuItem::new("Keep on Top").checked(s.keeps_on_top()).on_select(|s: &mut App| s.toggle_keep_on_top()))
+        .item(MenuItem::new("Hide").shortcut(commands::label("escape")).on_select(|s: &mut App| s.hide_panel()))
+        .separator()
+        .item(
+            MenuItem::new("Reveal Notes File")
+                .disabled(s.notes_path().is_none())
+                .on_select(|s: &mut App| s.reveal_notes()),
+        )
+        .item(MenuItem::new("Quit Bronze").on_select_tx(|_: &mut App, tx: &mut Tx| tx.quit()))
         .build(kit, layer)
 }
 
 fn target_item(label: &str, target: Option<SectionId>, current: Option<SectionId>) -> MenuItem {
     MenuItem::new(label).checked(target == current).on_select(move |s: &mut App| s.send_to(target))
+}
+
+pub fn notice(s: &App, look: &Look) -> Option<El> {
+    let notice = s.notice()?;
+    Some(
+        row()
+            .key("notice")
+            .role("status")
+            .self_center()
+            .mt(8.0)
+            .h(26.0)
+            .px(12.0)
+            .center_y()
+            .radius(13.0)
+            .fill(look.raised)
+            .border(look.hair, look.card_border)
+            .child(text(notice).font(type_::LABEL).color(look.muted)),
+    )
 }
 
 pub fn composer(s: &App, look: &Look) -> El {

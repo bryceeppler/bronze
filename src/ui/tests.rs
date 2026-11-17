@@ -1,30 +1,53 @@
-use rune::clipboard::{self, MemoryClipboard};
-use rune::{Env, Key, KeyEvent, Mods, PhysicalInput, Runtime};
+use std::rc::Rc;
 
-use super::app::card_key;
-use super::{App, on_key, view};
+use rune::clipboard::{self, MemoryClipboard};
+use rune::{AppSpec, Env, Key, KeyEvent, Mods, PhysicalInput, Runtime};
+
+use super::app::{Panel as Shown, card_key};
+use super::commands::Global;
+use super::{App, Saved, Window, on_key, view};
 use crate::board::{Board, NoteId, Scope};
-use crate::store::Store;
+use crate::platform::Fake;
+use crate::prefs::Prefs;
+use crate::store::{self, Store};
 
 struct Panel {
     rt: Runtime<App>,
     clipboard: MemoryClipboard,
+    platform: Rc<Fake>,
 }
 
 impl Panel {
     fn new() -> Panel {
+        Panel::with(Saved {
+            board: Board::default(),
+            notes: Store::Memory,
+            prefs: Prefs::default(),
+            preferences: Store::Memory,
+        })
+    }
+
+    fn with(saved: Saved) -> Panel {
+        let platform = Rc::new(Fake::default());
+        let unbound = rune::App::new(AppSpec::new("Bronze", (360.0, 640.0), || unreachable!(), view)).handle();
         let mut rt = Runtime::new(
-            App::new(Board::default(), Store::Memory),
+            App::new(saved, platform.clone(), Window::new(unbound)),
             view,
             (360.0, 640.0),
             Env { system_dark: false, scale: 2.0 },
         );
         rt.on_key = Some(on_key);
+        rt.poll = Some(|s, clock, tx| s.poll(clock, tx));
         let clipboard = clipboard::memory();
         rt.use_clipboard(&clipboard);
-        let mut panel = Panel { rt, clipboard };
+        let mut panel = Panel { rt, clipboard, platform };
         panel.settle();
         panel
+    }
+
+    fn press(&mut self, global: Global) {
+        self.rt.update(|s, tx| s.global(global, tx));
+        self.settle();
     }
 
     fn settle(&mut self) {
@@ -132,7 +155,7 @@ fn the_core_loop_captures_sections_copies_merges_and_clears() {
 
     p.command('k');
     p.key(Key::Enter, PLAIN);
-    assert_eq!(p.rt.state.scope, Scope::All, "Show All is the switcher's first entry");
+    assert_eq!(p.rt.state.scope(), Scope::All, "Show All is the switcher's first entry");
 
     p.click(p.at(&card_key(first)), PLAIN);
     p.click(p.at(&card_key(second)), SHIFT);
@@ -275,9 +298,117 @@ fn the_menu_sends_new_notes_to_a_section_without_changing_the_view() {
     p.click(p.at("composer"), PLAIN);
     p.submit("milk");
     assert_eq!(p.board().sections()[0].notes.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["milk"]);
-    assert_eq!(p.rt.state.scope, Scope::All);
+    assert_eq!(p.rt.state.scope(), Scope::All);
 
     p.click(p.at("more"), PLAIN);
     p.click(p.menu_item("Show Only Errands"), PLAIN);
-    assert_eq!(p.rt.state.scope, Scope::Active);
+    assert_eq!(p.rt.state.scope(), Scope::Active);
+}
+
+fn settle_for(p: &mut Panel, seconds: f64) {
+    for _ in 0..(seconds * 60.0) as usize {
+        p.rt.frame(1.0 / 60.0);
+    }
+}
+
+#[test]
+fn the_capture_shortcut_adds_the_selection_verbatim_to_the_active_section_and_leaves_the_clipboard_alone() {
+    let mut p = Panel::new();
+    p.submit("# Research");
+    p.clipboard.set_text("copied earlier");
+    p.platform.select(Some("  let cache = Lru::new(64);\n"));
+    p.press(Global::Capture);
+    let research = &p.board().sections()[0];
+    assert_eq!(research.notes.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["  let cache = Lru::new(64);\n"]);
+    assert_eq!(p.clipboard.text().as_deref().map(String::as_str), Some("copied earlier"));
+}
+
+#[test]
+fn capture_with_nothing_selected_adds_nothing_and_says_so_briefly() {
+    let mut p = Panel::new();
+    p.platform.select(Some(" \n"));
+    p.press(Global::Capture);
+    assert!(p.texts().is_empty());
+    assert!(p.rt.find("notice").is_some());
+    settle_for(&mut p, 3.0);
+    assert!(p.rt.find("notice").is_none());
+}
+
+#[test]
+fn capture_while_hidden_keeps_the_panel_hidden() {
+    let mut p = Panel::new();
+    p.press(Global::ShowOrHide);
+    assert_eq!(p.rt.state.panel, Shown::Hidden);
+    p.platform.select(Some("from the terminal"));
+    p.press(Global::Capture);
+    assert_eq!(p.texts(), ["from the terminal"]);
+    assert_eq!(p.rt.state.panel, Shown::Hidden);
+}
+
+#[test]
+fn the_show_or_hide_shortcut_toggles_the_panel_and_focuses_the_composer() {
+    let mut p = Panel::new();
+    p.submit("a note");
+    p.click(p.at(&card_key(p.id("a note"))), PLAIN);
+    assert!(!p.rt.state.composer.focused);
+    p.press(Global::ShowOrHide);
+    assert_eq!(p.rt.state.panel, Shown::Hidden);
+    p.press(Global::ShowOrHide);
+    assert_eq!(p.rt.state.panel, Shown::Shown);
+    assert!(p.rt.state.composer.focused);
+}
+
+#[test]
+fn escape_clears_the_selection_then_closes_an_overlay_then_hides_the_panel() {
+    let mut p = Panel::new();
+    p.submit("a note");
+    p.click(p.at(&card_key(p.id("a note"))), PLAIN);
+    p.key(Key::Escape, PLAIN);
+    assert!(p.rt.state.selected().is_empty());
+    assert_eq!(p.rt.state.panel, Shown::Shown);
+
+    p.click(p.at("more"), PLAIN);
+    p.click(p.menu_item("Keyboard Shortcuts"), PLAIN);
+    p.key(Key::Escape, PLAIN);
+    assert!(p.rt.find("shortcuts").is_none());
+    assert_eq!(p.rt.state.panel, Shown::Shown);
+
+    p.key(Key::Escape, PLAIN);
+    assert_eq!(p.rt.state.panel, Shown::Hidden);
+}
+
+#[test]
+fn keep_on_top_and_the_list_view_survive_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let open = || {
+        let (board, notes) = store::open::<Board>(dir.path());
+        let (prefs, preferences) = store::open::<Prefs>(dir.path());
+        (Saved { board, notes: notes.clone(), prefs, preferences: preferences.clone() }, notes, preferences)
+    };
+    let (saved, notes, preferences) = open();
+    let mut p = Panel::with(saved);
+    assert!(p.rt.state.keeps_on_top(), "on by default");
+    p.submit("# Errands");
+    p.click(p.at("more"), PLAIN);
+    p.click(p.menu_item("Keep on Top"), PLAIN);
+    p.click(p.at("more"), PLAIN);
+    p.click(p.menu_item("Show Only Errands"), PLAIN);
+    drop(p);
+    notes.flush();
+    preferences.flush();
+
+    let (saved, ..) = open();
+    let p = Panel::with(saved);
+    assert!(!p.rt.state.keeps_on_top());
+    assert_eq!(p.rt.state.scope(), Scope::Active);
+}
+
+#[test]
+fn reveal_notes_file_asks_the_system_to_show_the_notes_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let (board, notes) = store::open::<Board>(dir.path());
+    let mut p = Panel::with(Saved { board, notes, prefs: Prefs::default(), preferences: Store::Memory });
+    p.click(p.at("more"), PLAIN);
+    p.click(p.menu_item("Reveal Notes File"), PLAIN);
+    assert_eq!(p.platform.revealed(), [dir.path().join("notes.json")]);
 }

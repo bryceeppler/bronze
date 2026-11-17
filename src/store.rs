@@ -9,7 +9,8 @@ use std::{fs, io, thread};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::board::{Board, Note, Restored};
+use crate::board::{Board, Note, Restored, Scope};
+use crate::prefs::{Frame, Prefs};
 
 pub trait Document: Clone + Default + Send + 'static {
     const FILE_NAME: &'static str;
@@ -25,7 +26,10 @@ pub enum Store<T> {
     File(Writer<T>),
 }
 
-pub struct Writer<T>(Sender<Message<T>>);
+pub struct Writer<T> {
+    tx: Sender<Message<T>>,
+    path: PathBuf,
+}
 
 enum Message<T> {
     Save(T),
@@ -57,6 +61,28 @@ struct NoteEntry {
 struct SectionEntry {
     name: String,
     notes: Vec<NoteEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PrefsFile {
+    keep_on_top: bool,
+    scope: ScopeEntry,
+    frame: Option<FrameEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ScopeEntry {
+    All,
+    Active,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FrameEntry {
+    x: i32,
+    y: i32,
+    width: f32,
+    height: f32,
 }
 
 #[derive(Deserialize)]
@@ -102,20 +128,27 @@ impl<T> Clone for Store<T> {
     fn clone(&self) -> Store<T> {
         match self {
             Store::Memory => Store::Memory,
-            Store::File(Writer(tx)) => Store::File(Writer(tx.clone())),
+            Store::File(Writer { tx, path }) => Store::File(Writer { tx: tx.clone(), path: path.clone() }),
         }
     }
 }
 
 impl<T: Document> Store<T> {
     pub fn save(&self, document: &T) {
-        if let Store::File(Writer(tx)) = self {
+        if let Store::File(Writer { tx, .. }) = self {
             let _ = tx.send(Message::Save(document.clone()));
         }
     }
 
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Store::Memory => None,
+            Store::File(writer) => Some(&writer.path),
+        }
+    }
+
     pub fn flush(&self) {
-        if let Store::File(Writer(tx)) = self {
+        if let Store::File(Writer { tx, .. }) = self {
             let (ack, done) = mpsc::channel();
             if tx.send(Message::Flush(ack)).is_ok() {
                 let _ = done.recv();
@@ -127,11 +160,12 @@ impl<T: Document> Store<T> {
 impl<T: Document> Writer<T> {
     fn spawn(path: PathBuf) -> Writer<T> {
         let (tx, rx) = mpsc::channel();
+        let file = path.clone();
         thread::Builder::new()
             .name("bronze-store".into())
-            .spawn(move || write_loop(&path, &rx))
+            .spawn(move || write_loop(&file, &rx))
             .expect("spawn the store writer");
-        Writer(tx)
+        Writer { tx, path }
     }
 }
 
@@ -228,5 +262,38 @@ impl Document for Board {
             sections: file.sections.into_iter().map(|s| (s.name, notes(s.notes))).collect(),
             active: file.active,
         })
+    }
+}
+
+impl Document for Prefs {
+    const FILE_NAME: &'static str = "preferences.json";
+    const VERSION: u32 = 1;
+    type File = PrefsFile;
+
+    fn to_file(&self) -> PrefsFile {
+        PrefsFile {
+            keep_on_top: self.keep_on_top,
+            scope: match self.scope {
+                Scope::All => ScopeEntry::All,
+                Scope::Active => ScopeEntry::Active,
+            },
+            frame: self.frame.map(|f| FrameEntry {
+                x: f.position.0,
+                y: f.position.1,
+                width: f.size.0,
+                height: f.size.1,
+            }),
+        }
+    }
+
+    fn from_file(file: PrefsFile) -> Prefs {
+        Prefs {
+            keep_on_top: file.keep_on_top,
+            scope: match file.scope {
+                ScopeEntry::All => Scope::All,
+                ScopeEntry::Active => Scope::Active,
+            },
+            frame: file.frame.map(|f| Frame { position: (f.x, f.y), size: (f.width, f.height) }),
+        }
     }
 }

@@ -1,6 +1,7 @@
-use rune::TextEdit;
+use rune::{ShortcutError, TextEdit};
 
 use super::app::{App, Click, Overlay};
+use super::commands::Global;
 use crate::board::NoteId;
 
 type Scene = (&'static str, fn(&mut App));
@@ -20,6 +21,10 @@ pub const SCENES: &[Scene] = &[
         sections(s);
         s.composer.focused = false;
         s.overlay = Overlay::Shortcuts;
+    }),
+    ("shortcut-taken", |s| {
+        notes(s);
+        s.shortcut_unavailable(Global::Capture, ShortcutError::Conflict);
     }),
     ("menu", |s| {
         sections(s);
