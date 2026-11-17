@@ -3,7 +3,7 @@ use rune::{Cursor, El, Key, KeyEvent, Tx, col, el, icon, row, text, text_input};
 use rune_kit::{Kit, Menu, MenuItem, context_menu};
 
 use super::app::{App, Overlay, Pick};
-use super::chrome::BODY;
+use super::chrome::{BODY, clear_of_caret};
 use super::commands;
 use super::icons;
 use super::look::Look;
@@ -86,7 +86,7 @@ fn switcher(s: &App, picked: usize, look: &Look) -> El {
         .single_line()
         .grow(1.0)
         .color(look.text)
-        .placeholder("Go to section", look.faint)
+        .placeholder(clear_of_caret("Go to section"), look.faint)
         .on_edit(|s: &mut App| &mut s.overlay_field)
         .on_input_change(|s: &mut App, _| s.overlay = Overlay::Switcher { picked: 0 })
         .on_input_key(switcher_key);

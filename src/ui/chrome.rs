@@ -9,6 +9,10 @@ use crate::board::Scope;
 
 pub const BODY: rune::TextStyle = type_::BODY.lh(18.0);
 
+pub fn clear_of_caret(placeholder: &str) -> String {
+    format!("\u{2005}{placeholder}")
+}
+
 pub fn top_bar(s: &App, look: &Look, kit: &Kit, layer: &mut Vec<El>) -> El {
     let search = row()
         .key("search-box")
@@ -30,7 +34,7 @@ pub fn top_bar(s: &App, look: &Look, kit: &Kit, layer: &mut Vec<El>) -> El {
                 .single_line()
                 .grow(1.0)
                 .color(look.text)
-                .placeholder("Search", look.faint)
+                .placeholder(clear_of_caret("Search"), look.faint)
                 .on_edit(|s: &mut App| &mut s.search)
                 .on_input_change(|s: &mut App, _| s.keep_shown_selected()),
         );
@@ -85,7 +89,7 @@ pub fn composer(s: &App, look: &Look) -> El {
         .label("New note")
         .w_full()
         .color(look.text)
-        .placeholder(placeholder, look.faint)
+        .placeholder(clear_of_caret(&placeholder), look.faint)
         .on_edit(|s: &mut App| &mut s.composer)
         .on_submit(|s: &mut App, tx: &mut Tx| s.submit(tx));
     let card = row()
