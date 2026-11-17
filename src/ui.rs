@@ -6,6 +6,7 @@ mod list;
 mod look;
 mod overlays;
 mod scenes;
+mod strike;
 #[cfg(test)]
 mod tests;
 

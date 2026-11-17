@@ -9,6 +9,7 @@ use super::app::{App, Click, LIST_KEY, Overlay, Shown, card_key};
 use super::chrome::BODY;
 use super::icons;
 use super::look::Look;
+use super::strike;
 use crate::board::{Note, NoteId, Owner, Place};
 use crate::inline::{self, Mark};
 
@@ -36,7 +37,8 @@ pub fn list(s: &App, cx: &mut Cx<App>, look: &Look) -> El {
             content = content.child(section_header(s, id, name, look));
         }
         for note in &list.notes {
-            content = content.child(card(s, note, look, geometry.clone()));
+            let width = cx.layout_with(&format!("{}/text", card_key(note.id)), |r| r[2]);
+            content = content.child(card(s, note, look, width, geometry.clone()));
         }
     }
     if !s.search.text.trim().is_empty() && shown.is_empty() {
@@ -116,7 +118,7 @@ fn section_header(s: &App, id: crate::board::SectionId, name: &str, look: &Look)
         .child(el().grow(1.0).h(look.hair).fill(look.hairline))
 }
 
-fn card(s: &App, note: &Note, look: &Look, geometry: Option<Rc<Geometry>>) -> El {
+fn card(s: &App, note: &Note, look: &Look, width: Option<f32>, geometry: Option<Rc<Geometry>>) -> El {
     let id = note.id;
     let selected = s.is_selected(id);
     let card = row()
@@ -131,7 +133,7 @@ fn card(s: &App, note: &Note, look: &Look, geometry: Option<Rc<Geometry>>) -> El
         .on_drag(move |s: &mut App, d: &mut Drag, tx: &mut Tx| drag(s, id, d, tx, geometry.as_deref()))
         .on_secondary_press(move |s: &mut App, at, _| s.open_note_menu(id, at))
         .child(checkbox(note, look))
-        .child(body(note, look));
+        .child(body(note, look, width));
     let card = if selected {
         card.border(1.0, look.accent.alpha(0.75))
     } else {
@@ -184,7 +186,7 @@ fn checkbox(note: &Note, look: &Look) -> El {
     }
 }
 
-fn body(note: &Note, look: &Look) -> El {
+fn body(note: &Note, look: &Look, width: Option<f32>) -> El {
     let styled = inline::parse(&note.text);
     let spans = styled
         .marks
@@ -197,8 +199,15 @@ fn body(note: &Note, look: &Look) -> El {
                 Mark::Code => Span { mono: true, size: Some(12.0), bg: Some(look.code), bg_pad: 2.0, ..span },
             }
         })
-        .collect();
-    let length = styled.text.len();
+        .collect::<Vec<_>>();
+    let strikes = match (note.done, width) {
+        (true, Some(width)) => {
+            let code: Vec<_> = styled.marks.iter().filter(|(_, m)| *m == Mark::Code).map(|(r, _)| r.clone()).collect();
+            strike::struck(&styled.text, &spans, BODY, width, &code)
+        }
+        _ => Vec::new(),
+    };
     let body = rich(styled.text, spans).key("text").font(BODY).max_lines(3).grow(1.0).shrink().min_w(0.0);
-    if note.done { body.color(look.faint).strike(0, length, None) } else { body.color(look.text) }
+    let body = body.strikes(strikes.into_iter().map(|r| (r.start, r.end, None)));
+    body.color(if note.done { look.faint } else { look.text })
 }
