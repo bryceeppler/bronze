@@ -1,0 +1,20 @@
+{"events": [
+  {"t": 0.3, "type": "type", "text": "# Research", "every": 0.03},
+  {"t": 0.8, "type": "key", "name": "Enter"},
+  {"t": 1.0, "type": "type", "text": "Compare the two cache designs", "every": 0.02},
+  {"t": 1.8, "type": "key", "name": "Enter"},
+  {"t": 2.0, "type": "type", "text": "Ask for a **rollout plan**", "every": 0.02},
+  {"t": 2.7, "type": "key", "name": "Enter"},
+  {"t": 3.1, "type": "tap", "key": "note-3/check"},
+  {"t": 3.6, "type": "key", "name": "k", "cmd": true},
+  {"t": 4.1, "type": "key", "name": "Enter"},
+  {"t": 4.5, "type": "tap", "key": "note-2"},
+  {"t": 4.8, "hold": "shift"},
+  {"t": 4.9, "type": "tap", "key": "note-3"},
+  {"t": 5.0, "hold": ""},
+  {"t": 5.3, "type": "key", "name": "c", "cmd": true},
+  {"t": 5.7, "type": "key", "name": "j", "cmd": true},
+  {"t": 6.2, "type": "tap", "key": "more"},
+  {"t": 6.7, "type": "tap", "key": "overflow-item6"},
+  {"t": 7.3, "type": "mark", "name": "end"}
+]}
