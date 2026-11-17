@@ -271,8 +271,13 @@ fn the_switcher_scrolls_to_keep_the_picked_section_in_the_window() {
     let last = p.rt.elements().into_iter().find(|e| e.key.as_deref() == Some("pick-25")).unwrap();
     assert!(last.rect[1] >= 0.0 && last.rect[1] + last.rect[3] <= 640.0, "picked row at {:?}", last.rect);
 
+    p.type_text("Section");
+    let list = p.rt.elements().into_iter().find(|e| e.key.as_deref() == Some("switcher-list")).unwrap().rect;
+    let first = p.rt.elements().into_iter().find(|e| e.key.as_deref() == Some("pick-0")).unwrap().rect;
+    assert!(first[1] >= list[1] && first[1] + first[3] <= list[1] + list[3], "first match at {first:?} in {list:?}");
+
     p.key(Key::Enter, PLAIN);
-    assert_eq!(p.board().active().map(|s| s.name.as_str()), Some("Section 25"));
+    assert_eq!(p.board().active().map(|s| s.name.as_str()), Some("Section 01"));
 }
 
 #[test]

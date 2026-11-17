@@ -100,7 +100,10 @@ fn switcher(s: &App, picked: usize, look: &Look) -> El {
         .color(look.text)
         .placeholder(clear_of_caret("Go to section"), look.faint)
         .on_edit(|s: &mut App| &mut s.overlay_field)
-        .on_input_change(|s: &mut App, _| s.overlay = Overlay::Switcher { picked: 0 })
+        .on_input_change(|s: &mut App, tx: &mut Tx| {
+            s.overlay = Overlay::Switcher { picked: 0 };
+            tx.scroll_into_view(pick_key(0));
+        })
         .on_input_key(switcher_key);
     let current = match s.scope() {
         Scope::All => Pick::All,
