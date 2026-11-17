@@ -15,6 +15,6 @@
   {"t": 5.3, "type": "key", "name": "c", "cmd": true},
   {"t": 5.7, "type": "key", "name": "j", "cmd": true},
   {"t": 6.2, "type": "tap", "key": "more"},
-  {"t": 6.7, "type": "tap", "key": "overflow-item4"},
+  {"t": 6.7, "type": "tap", "key": "overflow-item6"},
   {"t": 7.3, "type": "mark", "name": "end"}
 ]}

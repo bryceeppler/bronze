@@ -201,6 +201,22 @@ impl App {
         tx.scroll_to_instant(LIST_KEY, 0.0, 0.0);
     }
 
+    pub fn show(&mut self, scope: Scope, tx: &mut Tx) {
+        self.scope = scope;
+        self.overlay = Overlay::None;
+        self.keep_shown_selected();
+        tx.scroll_to_instant(LIST_KEY, 0.0, 0.0);
+    }
+
+    pub fn send_to(&mut self, target: Option<SectionId>) {
+        self.edit(|board| match target {
+            Some(id) => board.activate(id),
+            None => board.deactivate(),
+        });
+        self.overlay = Overlay::None;
+        self.keep_shown_selected();
+    }
+
     pub fn picks(&self) -> Vec<(Pick, String)> {
         let query = self.overlay_field.text.trim().to_lowercase();
         std::iter::once((Pick::All, "Show All".to_owned()))

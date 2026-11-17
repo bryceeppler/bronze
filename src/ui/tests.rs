@@ -65,6 +65,18 @@ impl Panel {
         (info.rect[0] + info.rect[2] / 2.0, info.rect[1] + info.rect[3] / 2.0)
     }
 
+    fn menu_item(&self, label: &str) -> (f32, f32) {
+        let info = self
+            .rt
+            .elements()
+            .into_iter()
+            .find(|e| {
+                e.key.as_deref().is_some_and(|k| k.starts_with("overflow-item")) && e.label.as_deref() == Some(label)
+            })
+            .unwrap_or_else(|| panic!("no menu item {label:?}"));
+        (info.rect[0] + info.rect[2] / 2.0, info.rect[1] + info.rect[3] / 2.0)
+    }
+
     fn click(&mut self, (x, y): (f32, f32), mods: Mods) {
         self.rt.physical_input(PhysicalInput::Modifiers(mods));
         self.rt.pointer_down(x, y);
@@ -251,4 +263,21 @@ fn merge_from_the_context_menu() {
     p.secondary_click(p.at(&card_key(p.id("right"))));
     p.click(p.with_text("Merge"), PLAIN);
     assert_eq!(p.texts(), ["left\n\nright"]);
+}
+
+#[test]
+fn the_menu_sends_new_notes_to_a_section_without_changing_the_view() {
+    let mut p = Panel::new();
+    p.submit("# Errands");
+    p.submit("# Work");
+    p.click(p.at("more"), PLAIN);
+    p.click(p.menu_item("Errands"), PLAIN);
+    p.click(p.at("composer"), PLAIN);
+    p.submit("milk");
+    assert_eq!(p.board().sections()[0].notes.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["milk"]);
+    assert_eq!(p.rt.state.scope, Scope::All);
+
+    p.click(p.at("more"), PLAIN);
+    p.click(p.menu_item("Show Only Errands"), PLAIN);
+    assert_eq!(p.rt.state.scope, Scope::Active);
 }

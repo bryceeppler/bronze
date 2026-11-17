@@ -2,10 +2,10 @@ use rune::tok::type_;
 use rune::{Cursor, El, Shadow, Tx, auto_grow, el, icon, row, text_input};
 use rune_kit::{Kit, Menu, MenuItem, Placement};
 
-use super::app::{App, Overlay, Pick};
+use super::app::{App, Overlay};
 use super::icons;
 use super::look::Look;
-use crate::board::Scope;
+use crate::board::{Scope, SectionId};
 
 pub const BODY: rune::TextStyle = type_::BODY.lh(18.0);
 
@@ -54,28 +54,36 @@ pub fn top_bar(s: &App, look: &Look, kit: &Kit, layer: &mut Vec<El>) -> El {
 }
 
 fn overflow_menu(s: &App, trigger: El, kit: &Kit, layer: &mut Vec<El>) -> El {
-    let active = s.board().active().map(|section| section.id);
+    let board = s.board();
     let mut menu = Menu::new("overflow")
         .trigger(trigger)
         .placement(Placement::BottomEnd)
-        .min_width(200.0)
+        .min_width(220.0)
         .open(matches!(s.overlay, Overlay::Menu))
-        .on_close(|s: &mut App| s.overlay = Overlay::None)
-        .item(pick_item("Show All", Pick::All, s.scope == Scope::All));
-    if !s.board().sections().is_empty() {
+        .on_close(|s: &mut App| s.overlay = Overlay::None);
+    if let Some(active) = board.active() {
+        let (label, scope) = match s.scope {
+            Scope::All => (format!("Show Only {}", active.name), Scope::Active),
+            Scope::Active => ("Show All Sections".to_owned(), Scope::All),
+        };
+        menu =
+            menu.item(MenuItem::new(label).on_select_tx(move |s: &mut App, tx: &mut Tx| s.show(scope, tx))).separator();
+    }
+    if !board.sections().is_empty() {
+        let target = board.active().map(|section| section.id);
+        menu = menu.group_label("New Notes Go To").item(target_item("No Section", None, target));
+        for section in board.sections() {
+            menu = menu.item(target_item(&section.name, Some(section.id), target));
+        }
         menu = menu.separator();
     }
-    for section in s.board().sections() {
-        menu = menu.item(pick_item(&section.name, Pick::Section(section.id), active == Some(section.id)));
-    }
-    menu.separator()
-        .item(MenuItem::new("Clear Done").on_select(|s: &mut App| s.clear_done()))
+    menu.item(MenuItem::new("Clear Done").on_select(|s: &mut App| s.clear_done()))
         .item(MenuItem::new("Keyboard Shortcuts").on_select(|s: &mut App| s.overlay = Overlay::Shortcuts))
         .build(kit, layer)
 }
 
-fn pick_item(label: &str, pick: Pick, checked: bool) -> MenuItem {
-    MenuItem::new(label).checked(checked).on_select_tx(move |s: &mut App, tx: &mut Tx| s.pick(pick, tx))
+fn target_item(label: &str, target: Option<SectionId>, current: Option<SectionId>) -> MenuItem {
+    MenuItem::new(label).checked(target == current).on_select(move |s: &mut App| s.send_to(target))
 }
 
 pub fn composer(s: &App, look: &Look) -> El {

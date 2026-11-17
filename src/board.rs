@@ -209,6 +209,10 @@ impl Board {
         }
     }
 
+    pub fn deactivate(&mut self) {
+        self.active = None;
+    }
+
     pub fn rename_section(&mut self, id: SectionId, name: &str) -> bool {
         let name = name.trim();
         let taken = self.section_named(name).is_some_and(|s| s.id != id);
