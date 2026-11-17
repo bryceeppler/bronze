@@ -19,7 +19,10 @@ pub fn parse(source: &str) -> Styled {
     let mut styled = Styled::default();
     let mut rest = source;
     while let Some(c) = rest.chars().next() {
-        match DELIMITERS.iter().find_map(|&(delimiter, mark)| enclosed(rest, delimiter).map(|inner| (delimiter, mark, inner))) {
+        match DELIMITERS
+            .iter()
+            .find_map(|&(delimiter, mark)| enclosed(rest, delimiter).map(|inner| (delimiter, mark, inner)))
+        {
             Some((delimiter, mark, inner)) => {
                 let start = styled.text.len();
                 styled.text.push_str(inner);
@@ -55,12 +58,16 @@ mod tests {
     fn bold_italic_and_code_drop_their_markers() {
         let styled = parse("Use **TOML** with *care* and `cargo fmt`.");
         assert_eq!(styled.text, "Use TOML with care and cargo fmt.");
-        assert_eq!(marked("Use **TOML** with *care* and `cargo fmt`."), [("TOML".into(), Mark::Bold), ("care".into(), Mark::Italic), ("cargo fmt".into(), Mark::Code)]);
+        assert_eq!(
+            marked("Use **TOML** with *care* and `cargo fmt`."),
+            [("TOML".into(), Mark::Bold), ("care".into(), Mark::Italic), ("cargo fmt".into(), Mark::Code)]
+        );
     }
 
     #[test]
     fn underscores_and_stray_stars_stay_literal() {
-        for source in ["rename snake_case_name and __init__", "2 * 3 * 4", "a ** b", "**unclosed", "`", "** spaced **"] {
+        for source in ["rename snake_case_name and __init__", "2 * 3 * 4", "a ** b", "**unclosed", "`", "** spaced **"]
+        {
             assert_eq!(parse(source), Styled { text: source.into(), marks: vec![] }, "{source:?}");
         }
     }

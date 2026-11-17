@@ -7,6 +7,18 @@ pub struct NoteId(u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SectionId(u64);
 
+impl std::fmt::Display for NoteId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::fmt::Display for SectionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Note {
     pub id: NoteId,
@@ -153,10 +165,12 @@ impl Board {
         }
         let into = first.id;
         let text = picked.iter().map(|n| n.text.as_str()).collect::<Vec<_>>().join("\n\n");
+        let done = picked.iter().all(|n| n.done);
         let folded: Vec<NoteId> = rest.iter().map(|n| n.id).collect();
         self.remove(&folded);
         if let Some(note) = self.notes_mut().find(|n| n.id == into) {
             note.text = text;
+            note.done = done;
         }
         Some(into)
     }
@@ -166,7 +180,9 @@ impl Board {
         let target = match to {
             Place::Before(other) if other != id => self.locate(other),
             Place::Before(_) => None,
-            Place::End(owner) => self.lists(Scope::All).iter().find(|l| l.owner == owner).map(|l| (owner, l.notes.len())),
+            Place::End(owner) => {
+                self.lists(Scope::All).iter().find(|l| l.owner == owner).map(|l| (owner, l.notes.len()))
+            }
         };
         let Some((owner, mut at)) = target else { return };
         if owner == from_owner && from < at {

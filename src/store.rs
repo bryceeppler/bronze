@@ -77,7 +77,10 @@ pub fn open(dir: &Path) -> (Board, Store) {
                 (Board::default(), Store::File(Writer::spawn(path)))
             }
             Err(error) => {
-                eprintln!("bronze: {} was unreadable ({why}) and could not be moved aside ({error}); notes stay in memory", path.display());
+                eprintln!(
+                    "bronze: {} was unreadable ({why}) and could not be moved aside ({error}); notes stay in memory",
+                    path.display()
+                );
                 (Board::default(), Store::Memory)
             }
         },
@@ -104,7 +107,10 @@ impl Store {
 impl Writer {
     fn spawn(path: PathBuf) -> Writer {
         let (tx, rx) = mpsc::channel();
-        thread::Builder::new().name("bronze-store".into()).spawn(move || write_loop(&path, &rx)).expect("spawn the store writer");
+        thread::Builder::new()
+            .name("bronze-store".into())
+            .spawn(move || write_loop(&path, &rx))
+            .expect("spawn the store writer");
         Writer(tx)
     }
 }

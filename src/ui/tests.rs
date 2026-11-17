@@ -1,0 +1,254 @@
+use rune::clipboard::{self, MemoryClipboard};
+use rune::{Env, Key, KeyEvent, Mods, PhysicalInput, Runtime};
+
+use super::app::card_key;
+use super::{App, on_key, view};
+use crate::board::{Board, NoteId, Scope};
+use crate::store::Store;
+
+struct Panel {
+    rt: Runtime<App>,
+    clipboard: MemoryClipboard,
+}
+
+impl Panel {
+    fn new() -> Panel {
+        let mut rt = Runtime::new(
+            App::new(Board::default(), Store::Memory),
+            view,
+            (360.0, 640.0),
+            Env { system_dark: false, scale: 2.0 },
+        );
+        rt.on_key = Some(on_key);
+        let clipboard = clipboard::memory();
+        rt.use_clipboard(&clipboard);
+        let mut panel = Panel { rt, clipboard };
+        panel.settle();
+        panel
+    }
+
+    fn settle(&mut self) {
+        for _ in 0..30 {
+            self.rt.frame(1.0 / 60.0);
+        }
+    }
+
+    fn key(&mut self, key: Key, mods: Mods) {
+        self.rt.key(KeyEvent { key, mods });
+        self.settle();
+    }
+
+    fn command(&mut self, c: char) {
+        self.key(Key::Command(c), Mods { cmd: true, ..Mods::default() });
+    }
+
+    fn type_text(&mut self, text: &str) {
+        self.key(Key::Text(text.into()), Mods::default());
+    }
+
+    fn submit(&mut self, text: &str) {
+        self.type_text(text);
+        self.key(Key::Enter, Mods::default());
+    }
+
+    fn at(&self, key: &str) -> (f32, f32) {
+        self.rt.find(key).unwrap_or_else(|| panic!("no element keyed {key}"))
+    }
+
+    fn with_text(&self, text: &str) -> (f32, f32) {
+        let info = self
+            .rt
+            .elements()
+            .into_iter()
+            .find(|e| e.text.as_deref() == Some(text))
+            .unwrap_or_else(|| panic!("no element reads {text:?}"));
+        (info.rect[0] + info.rect[2] / 2.0, info.rect[1] + info.rect[3] / 2.0)
+    }
+
+    fn click(&mut self, (x, y): (f32, f32), mods: Mods) {
+        self.rt.physical_input(PhysicalInput::Modifiers(mods));
+        self.rt.pointer_down(x, y);
+        self.rt.pointer_up(x, y);
+        self.settle();
+        self.rt.physical_input(PhysicalInput::Modifiers(Mods::default()));
+    }
+
+    fn secondary_click(&mut self, (x, y): (f32, f32)) {
+        self.rt.secondary_down(x, y);
+        self.rt.secondary_up(x, y);
+        self.settle();
+    }
+
+    fn drag(&mut self, from: (f32, f32), to: (f32, f32)) {
+        self.rt.pointer_down(from.0, from.1);
+        for step in 1..=12 {
+            let t = step as f32 / 12.0;
+            self.rt.pointer_move(from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
+            self.rt.frame(1.0 / 60.0);
+        }
+        self.rt.pointer_up(to.0, to.1);
+        self.settle();
+    }
+
+    fn board(&self) -> &Board {
+        self.rt.state.board()
+    }
+
+    fn id(&self, text: &str) -> NoteId {
+        self.board().notes().find(|n| n.text == text).map(|n| n.id).unwrap_or_else(|| panic!("no note {text:?}"))
+    }
+
+    fn texts(&self) -> Vec<String> {
+        self.board().notes().map(|n| n.text.clone()).collect()
+    }
+}
+
+const PLAIN: Mods = Mods { shift: false, cmd: false, alt: false, ctrl: false, logo: false };
+const SHIFT: Mods = Mods { shift: true, ..PLAIN };
+const CMD: Mods = Mods { cmd: true, ..PLAIN };
+
+#[test]
+fn the_core_loop_captures_sections_copies_merges_and_clears() {
+    let mut p = Panel::new();
+    p.submit("# Research");
+    p.submit("Compare the two cache designs");
+    p.submit("Ask for a rollout plan");
+    let (first, second) = (p.id("Compare the two cache designs"), p.id("Ask for a rollout plan"));
+
+    p.click(p.at(&format!("{}/check", card_key(second))), PLAIN);
+    assert!(p.board().notes().find(|n| n.id == second).is_some_and(|n| n.done));
+
+    p.command('k');
+    p.key(Key::Enter, PLAIN);
+    assert_eq!(p.rt.state.scope, Scope::All, "Show All is the switcher's first entry");
+
+    p.click(p.at(&card_key(first)), PLAIN);
+    p.click(p.at(&card_key(second)), SHIFT);
+    p.command('c');
+    assert_eq!(
+        p.clipboard.text().as_deref().map(String::as_str),
+        Some("Compare the two cache designs\n\nAsk for a rollout plan")
+    );
+
+    p.command('j');
+    assert_eq!(p.texts(), ["Compare the two cache designs\n\nAsk for a rollout plan"]);
+
+    p.click(p.at("more"), PLAIN);
+    p.click(p.with_text("Clear Done"), PLAIN);
+    let research = &p.board().sections()[0];
+    assert_eq!(research.name, "Research");
+    assert_eq!(research.notes.len(), 1, "the merged note is open, so Clear Done keeps it");
+    assert_eq!(p.board().active().map(|s| s.id), Some(research.id));
+}
+
+#[test]
+fn shift_enter_writes_a_newline_and_enter_submits() {
+    let mut p = Panel::new();
+    p.type_text("first line");
+    p.key(Key::Enter, SHIFT);
+    p.submit("second line");
+    assert_eq!(p.texts(), ["first line\nsecond line"]);
+    assert!(p.rt.state.composer.text.is_empty());
+}
+
+#[test]
+fn selection_keys_toggle_and_delete_and_escape_clears() {
+    let mut p = Panel::new();
+    for text in ["one", "two", "three"] {
+        p.submit(text);
+    }
+    p.click(p.at(&card_key(p.id("one"))), PLAIN);
+    p.click(p.at(&card_key(p.id("three"))), CMD);
+    p.key(Key::Text(" ".into()), PLAIN);
+    let done: Vec<_> = p.board().notes().filter(|n| n.done).map(|n| n.text.clone()).collect();
+    assert_eq!(done, ["one", "three"]);
+
+    p.key(Key::Backspace, PLAIN);
+    assert_eq!(p.texts(), ["two"]);
+
+    p.click(p.at(&card_key(p.id("two"))), PLAIN);
+    p.key(Key::Escape, PLAIN);
+    assert!(p.rt.state.selected().is_empty());
+    p.key(Key::Delete, PLAIN);
+    assert_eq!(p.texts(), ["two"], "nothing selected, nothing deleted");
+}
+
+#[test]
+fn dragging_a_note_reorders_it_and_moves_it_into_a_section() {
+    let mut p = Panel::new();
+    for text in ["alpha", "beta", "gamma"] {
+        p.submit(text);
+    }
+    p.drag(p.at(&card_key(p.id("gamma"))), p.at(&card_key(p.id("alpha"))));
+    assert_eq!(p.board().loose().iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["gamma", "alpha", "beta"]);
+
+    p.click(p.at("composer"), PLAIN);
+    p.submit("# Later");
+    p.submit("delta");
+    let below_delta = {
+        let (x, y) = p.at(&card_key(p.id("delta")));
+        (x, y + 30.0)
+    };
+    p.drag(p.at(&card_key(p.id("alpha"))), below_delta);
+    assert_eq!(p.board().loose().iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["gamma", "beta"]);
+    assert_eq!(p.board().sections()[0].notes.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["delta", "alpha"]);
+}
+
+#[test]
+fn search_shows_only_matching_notes() {
+    let mut p = Panel::new();
+    for text in ["Buy oat milk", "Review the MILK carton design", "Call the bank"] {
+        p.submit(text);
+    }
+    p.click(p.at("search"), PLAIN);
+    p.type_text("milk");
+    assert!(p.rt.find(&card_key(p.id("Buy oat milk"))).is_some());
+    assert!(p.rt.find(&card_key(p.id("Review the MILK carton design"))).is_some());
+    assert!(p.rt.find(&card_key(p.id("Call the bank"))).is_none());
+}
+
+#[test]
+fn picking_a_section_focuses_the_list_on_it() {
+    let mut p = Panel::new();
+    p.submit("loose");
+    p.submit("# Errands");
+    p.submit("groceries");
+    p.submit("# Work");
+    p.command('k');
+    p.type_text("err");
+    p.key(Key::Enter, PLAIN);
+    assert_eq!(p.board().active().map(|s| s.name.as_str()), Some("Errands"));
+    assert!(p.rt.find(&card_key(p.id("groceries"))).is_some());
+    assert!(p.rt.find(&card_key(p.id("loose"))).is_none());
+}
+
+#[test]
+fn a_section_header_renames_and_deletes_its_section() {
+    let mut p = Panel::new();
+    p.submit("# Drafts");
+    p.submit("outline");
+    let header = format!("section-{}", p.board().sections()[0].id);
+
+    p.secondary_click(p.at(&header));
+    p.click(p.with_text("Rename Section"), PLAIN);
+    p.command('a');
+    p.submit("Ideas");
+    assert_eq!(p.board().sections()[0].name, "Ideas");
+
+    p.secondary_click(p.at(&header));
+    p.click(p.with_text("Delete Section"), PLAIN);
+    assert!(p.board().sections().is_empty());
+    assert_eq!(p.texts(), ["outline"]);
+}
+
+#[test]
+fn merge_from_the_context_menu() {
+    let mut p = Panel::new();
+    p.submit("left");
+    p.submit("right");
+    p.click(p.at(&card_key(p.id("left"))), PLAIN);
+    p.click(p.at(&card_key(p.id("right"))), CMD);
+    p.secondary_click(p.at(&card_key(p.id("right"))));
+    p.click(p.with_text("Merge"), PLAIN);
+    assert_eq!(p.texts(), ["left\n\nright"]);
+}

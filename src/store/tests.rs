@@ -70,7 +70,8 @@ fn the_file_is_pretty_versioned_json() {
     let (_, store) = open(dir.path());
     store.save(&sample());
     store.flush();
-    let json: serde_json::Value = serde_json::from_str(&fs::read_to_string(dir.path().join("notes.json")).unwrap()).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.path().join("notes.json")).unwrap()).unwrap();
     assert_eq!(json["version"], 1);
     assert_eq!(json["active"], "Research");
     assert_eq!(json["loose"][0], serde_json::json!({"text": "loose one", "done": true}));

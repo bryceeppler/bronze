@@ -71,8 +71,10 @@ fn merging_folds_notes_into_the_first_in_board_order() {
     let b = added(board.submit("second"));
     let c = added(board.submit("third"));
 
+    board.toggle(&[a, c]);
     assert_eq!(board.merge(&[c, a, b]), Some(a));
     assert_eq!(texts(board.loose()), ["first\n\nsecond\n\nthird"]);
+    assert!(!board.loose()[0].done, "an open note keeps the merge open");
     assert!(board.active().is_some_and(|s| s.notes.is_empty()));
     assert_eq!(board.merge(&[a]), None, "one note has nothing to merge with");
 }
