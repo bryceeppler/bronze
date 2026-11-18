@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "active": "Field notes",
+  "loose": [
+    {
+      "text": "Ask the model for three alternatives before choosing a direction.",
+      "done": false
+    }
+  ],
+  "sections": [
+    {
+      "name": "Field notes",
+      "notes": [
+        {
+          "text": "Keep the first version small enough to explain in one paragraph.",
+          "done": false
+        },
+        {
+          "text": "A good default should save a decision, not hide one.",
+          "done": false
+        },
+        {
+          "text": "Try the complete flow with the keyboard before adding another button.",
+          "done": true
+        }
+      ]
+    },
+    {
+      "name": "Weekend build",
+      "notes": [
+        {
+          "text": "Make a tiny weather station for the greenhouse.",
+          "done": false
+        },
+        {
+          "text": "Compare a local sensor with the hourly forecast.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "name": "Reading list",
+      "notes": [
+        {
+          "text": "The Design of Everyday Things\nRevisit the chapter on feedback and constraints.",
+          "done": false
+        }
+      ]
+    }
+  ]
+}

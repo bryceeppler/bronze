@@ -1,0 +1,19 @@
+macOS iconutil: decoded both final ICNS files
+Final preview from loki: HTTP 200, 11311 bytes
+Final hero from loki: HTTP 200, 206202 bytes
+Final GIF from loki: HTTP 200, 69567 bytes
+WCAG relative luminance calculation for the authored text palette.
+paper body: 13.33:1
+paper secondary: 5.79:1
+paper links: 4.91:1
+dark body: 14.15:1
+dark secondary: 8.14:1
+dark links: 8.32:1
+light logo: 5.41:1
+README dark body: 13.05:1
+badge text: 10.73:1
+The optional HTML design detector used regex fallback, so these explicit palette checks supply contrast evidence.
+ActiveState=active
+FragmentPath=/home/bryce/.config/systemd/user/bronze-set-b-preview.service
+UnitFileState=enabled
+Linger=yes
