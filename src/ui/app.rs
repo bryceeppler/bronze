@@ -1,7 +1,7 @@
-use std::io;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
 
 use rune::{Mods, PointerPress, ShortcutError, TextEdit, Tx};
 
@@ -15,11 +15,13 @@ use crate::sync::{Delivery, Setup, Status, SyncCode, Syncing};
 
 const NOTICE_SECONDS: f64 = 2.5;
 const ACCESS_RECHECK_SECONDS: f64 = 1.0;
+const SYNC_CODE_ON_CLIPBOARD: Duration = Duration::from_secs(120);
 
 pub struct App {
     board: Board,
     notes: Store<Board>,
     sync: Syncing,
+    pretended_sync: Option<(Status, SyncCode)>,
     prefs: Prefs,
     preferences: Store<Prefs>,
     platform: Rc<dyn Platform>,
@@ -79,6 +81,13 @@ pub enum Overlay {
     Rename(SectionId),
     Switcher { picked: usize },
     Shortcuts,
+    Sync(SyncSheet),
+}
+
+pub enum SyncSheet {
+    Entry { failure: Option<String> },
+    NewCode { copied: bool },
+    Linked { copied: bool, failure: Option<String> },
 }
 
 #[derive(Clone, Copy)]
@@ -108,6 +117,7 @@ impl App {
             board: saved.board,
             notes: saved.notes,
             sync,
+            pretended_sync: None,
             prefs: saved.prefs,
             preferences: saved.preferences,
             access: platform.access(),
@@ -496,24 +506,64 @@ impl App {
     }
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "the setup screen calls these"))]
 impl App {
-    pub fn sync_with(&mut self, setup: Setup) -> io::Result<SyncCode> {
-        let code = setup.code();
-        self.sync.start(code.clone(), self.board.replica(), self.window.waker())?;
-        Ok(code)
-    }
-
-    pub fn stop_syncing(&mut self) -> io::Result<()> {
-        self.sync.stop()
-    }
-
     pub fn sync_status(&self) -> Status {
-        self.sync.status()
+        match &self.pretended_sync {
+            Some((status, _)) => status.clone(),
+            None => self.sync.status(),
+        }
     }
 
     pub fn sync_code(&self) -> Option<&SyncCode> {
-        self.sync.code()
+        match &self.pretended_sync {
+            Some((_, code)) => Some(code),
+            None => self.sync.code(),
+        }
+    }
+
+    pub fn pretend_sync(&mut self, status: Status, code: SyncCode) {
+        self.pretended_sync = Some((status, code));
+    }
+
+    pub fn open_sync(&mut self) {
+        self.overlay = Overlay::Sync(match self.sync_code() {
+            Some(_) => SyncSheet::Linked { copied: false, failure: None },
+            None => {
+                self.overlay_field = focused_field("");
+                SyncSheet::Entry { failure: None }
+            }
+        });
+    }
+
+    pub fn submit_sync(&mut self) {
+        let Ok(setup) = Setup::parse(&self.overlay_field.text) else { return };
+        let starting = matches!(setup, Setup::Start(_));
+        let started = self.sync.start(setup.code(), self.board.replica(), self.window.waker());
+        self.overlay = Overlay::Sync(match started {
+            Ok(()) if starting => SyncSheet::NewCode { copied: false },
+            Ok(()) => SyncSheet::Linked { copied: false, failure: None },
+            Err(why) => SyncSheet::Entry { failure: Some(why.to_string()) },
+        });
+    }
+
+    pub fn copy_sync_code(&mut self, tx: &mut Tx) {
+        let Some(code) = self.sync_code() else { return };
+        _ = tx.copy_secret(code.reveal(), SYNC_CODE_ON_CLIPBOARD);
+        if let Overlay::Sync(SyncSheet::NewCode { copied } | SyncSheet::Linked { copied, .. }) = &mut self.overlay {
+            *copied = true;
+        }
+    }
+
+    pub fn stop_syncing(&mut self) {
+        match self.sync.stop() {
+            Ok(()) => {
+                self.overlay_field = focused_field("");
+                self.overlay = Overlay::Sync(SyncSheet::Entry { failure: None });
+            }
+            Err(why) => {
+                self.overlay = Overlay::Sync(SyncSheet::Linked { copied: false, failure: Some(why.to_string()) })
+            }
+        }
     }
 }
 

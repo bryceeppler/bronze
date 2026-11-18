@@ -16,9 +16,9 @@ use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
-pub use code::{Setup, SyncCode};
+pub use code::{Setup, SetupRefusal, SyncCode};
 pub use engine::Delivery;
-pub use status::Status;
+pub use status::{Offline, Refusal, Status};
 
 use engine::{Engine, Event, Halt};
 use file::SyncFile;

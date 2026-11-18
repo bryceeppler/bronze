@@ -6,6 +6,7 @@ use super::app::{App, Notice, Overlay};
 use super::commands;
 use super::icons;
 use super::look::Look;
+use super::sync_sheet;
 use crate::board::{Scope, SectionId};
 
 pub const BODY: rune::TextStyle = type_::BODY.lh(18.0);
@@ -90,6 +91,11 @@ fn overflow_menu(s: &App, trigger: El, kit: &Kit, layer: &mut Vec<El>) -> El {
     }
     menu.item(MenuItem::new("Clear Done").on_select(|s: &mut App| s.clear_done()))
         .item(MenuItem::new("Keyboard Shortcuts").on_select(|s: &mut App| s.overlay = Overlay::Shortcuts))
+        .item(
+            MenuItem::new("Sync\u{2026}")
+                .shortcut(sync_sheet::summary(&s.sync_status()))
+                .on_select(|s: &mut App| s.open_sync()),
+        )
         .separator()
         .group_label("Window")
         .item(MenuItem::new("Keep on Top").checked(s.keeps_on_top()).on_select(|s: &mut App| s.toggle_keep_on_top()))
