@@ -156,14 +156,13 @@ impl FromRequest<App> for Write {
         )
         .map_err(Reject::Malformed)?
         .ok_or(Reject::PreconditionRequired)?;
-        let setup_token = parts.headers.get(bronze_wire::header::SETUP_TOKEN).map(|value| value.as_bytes().to_vec());
         let bytes = Bytes::from_request(Request::from_parts(parts, body), app).await.map_err(|rejection| {
             match rejection.status() {
                 StatusCode::PAYLOAD_TOO_LARGE => Reject::TooLarge,
                 _ => Reject::Malformed(Malformed("body")),
             }
         })?;
-        Ok(Self { vault, token, precondition, setup_token, bytes: bytes.into() })
+        Ok(Self { vault, token, precondition, bytes: bytes.into() })
     }
 }
 
@@ -187,9 +186,6 @@ impl IntoResponse for Reject {
             }
             Self::PreconditionFailed(None) => (StatusCode::PRECONDITION_FAILED, "no such vault").into_response(),
             Self::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "board too large").into_response(),
-            Self::SetupTokenRefused => {
-                (StatusCode::FORBIDDEN, "creating a vault needs the setup token").into_response()
-            }
             Self::VaultLimitReached => {
                 (StatusCode::FORBIDDEN, "this server holds all the vaults it allows").into_response()
             }

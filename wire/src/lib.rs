@@ -11,13 +11,12 @@ pub fn vault_path(vault: &VaultId) -> String {
 
 pub mod header {
     pub const PREFER: &str = "prefer";
-    pub const SETUP_TOKEN: &str = "bronze-setup-token";
 }
 
 pub const MAX_WAIT: Duration = Duration::from_secs(55);
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8787";
 pub const DEFAULT_MAX_BYTES: u64 = 8 * 1024 * 1024;
-pub const DEFAULT_MAX_VAULTS: u64 = 100;
+pub const DEFAULT_MAX_VAULTS: u64 = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Malformed(pub &'static str);

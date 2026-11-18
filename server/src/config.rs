@@ -1,11 +1,8 @@
-use std::fmt;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use bronze_wire::{DEFAULT_LISTEN, DEFAULT_MAX_BYTES, DEFAULT_MAX_VAULTS};
-use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 
 pub struct Config {
     pub listen: SocketAddr,
@@ -17,33 +14,11 @@ pub struct Config {
 pub struct Limits {
     pub max_bytes: usize,
     pub max_vaults: u64,
-    pub setup_token: Option<SetupToken>,
 }
 
 impl Default for Limits {
     fn default() -> Self {
-        Self { max_bytes: DEFAULT_MAX_BYTES as usize, max_vaults: DEFAULT_MAX_VAULTS, setup_token: None }
-    }
-}
-
-pub struct SetupToken([u8; 32]);
-
-impl SetupToken {
-    pub fn new(secret: &str) -> Self {
-        Self(Sha256::digest(secret.as_bytes()).into())
-    }
-
-    pub fn admits(&self, presented: Option<&[u8]>) -> bool {
-        presented.is_some_and(|presented| {
-            let presented: [u8; 32] = Sha256::digest(presented).into();
-            self.0.ct_eq(&presented).into()
-        })
-    }
-}
-
-impl fmt::Debug for SetupToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SetupToken(..)")
+        Self { max_bytes: DEFAULT_MAX_BYTES as usize, max_vaults: DEFAULT_MAX_VAULTS }
     }
 }
 
@@ -59,10 +34,6 @@ impl Config {
             limits: Limits {
                 max_bytes: usize::try_from(max_bytes).map_err(|_| "BRONZE_SYNC_MAX_BYTES is too large")?,
                 max_vaults: var("BRONZE_SYNC_MAX_VAULTS", &DEFAULT_MAX_VAULTS.to_string())?,
-                setup_token: std::env::var("BRONZE_SYNC_SETUP_TOKEN")
-                    .ok()
-                    .filter(|token| !token.is_empty())
-                    .map(|token| SetupToken::new(&token)),
             },
         })
     }

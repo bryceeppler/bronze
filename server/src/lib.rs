@@ -2,7 +2,7 @@ mod config;
 mod http;
 mod store;
 
-pub use config::{Config, Limits, SetupToken};
+pub use config::{Config, Limits};
 pub use http::serve;
 pub use store::Store;
 
@@ -16,7 +16,6 @@ pub enum Reject {
     PreconditionRequired,
     PreconditionFailed(Option<Version>),
     TooLarge,
-    SetupTokenRefused,
     VaultLimitReached,
     Internal(Box<dyn std::error::Error + Send + Sync>),
 }

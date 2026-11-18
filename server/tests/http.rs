@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use bronze_sync::{Limits, SetupToken, Store, serve};
+use bronze_sync::{Limits, Store, serve};
 use reqwest::header::{AUTHORIZATION, ETAG, IF_MATCH, IF_NONE_MATCH, WWW_AUTHENTICATE};
 use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use tempfile::TempDir;
@@ -169,42 +169,6 @@ async fn an_unknown_vault_is_404_and_replacing_it_is_412() {
 }
 
 #[tokio::test]
-async fn a_setup_token_gates_creating_a_vault_but_not_using_one() {
-    let secret = random_hex();
-    let (_data, server) = started(Limits { setup_token: Some(SetupToken::new(&secret)), ..Limits::default() }).await;
-    let vault = server.vault();
-    let create = |setup: Option<String>| {
-        let request = vault.put().header(IF_NONE_MATCH, "*").body("one");
-        async move {
-            match setup {
-                Some(setup) => request.header("Bronze-Setup-Token", setup),
-                None => request,
-            }
-            .send()
-            .await
-            .unwrap()
-            .status()
-        }
-    };
-    assert_eq!(create(None).await, StatusCode::FORBIDDEN);
-    assert_eq!(create(Some(random_hex())).await, StatusCode::FORBIDDEN);
-    assert_eq!(vault.get().send().await.unwrap().status(), StatusCode::NOT_FOUND);
-    assert_eq!(create(Some(secret)).await, StatusCode::CREATED);
-    let (version, _) = vault.body().await;
-    assert_eq!(vault.replace(&version.unwrap(), "two").await.status(), StatusCode::NO_CONTENT);
-    server.stop().await;
-}
-
-#[tokio::test]
-async fn without_a_setup_token_anyone_with_a_key_can_create() {
-    let (_data, server) = started(Limits::default()).await;
-    let vault = server.vault();
-    let created = vault.put().header(IF_NONE_MATCH, "*").header("Bronze-Setup-Token", "ignored").send().await.unwrap();
-    assert_eq!(created.status(), StatusCode::CREATED);
-    server.stop().await;
-}
-
-#[tokio::test]
 async fn the_vault_cap_refuses_new_vaults_only() {
     let (_data, server) = started(Limits { max_vaults: 2, ..Limits::default() }).await;
     let first = server.vault();
@@ -228,6 +192,25 @@ async fn bytes_survive_a_restart() {
     let server = Server::start(data.path(), Limits::default()).await;
     let vault = server.open(&vault.id, vault.token);
     assert_eq!(vault.body().await, (Some(version), "kept".to_owned()));
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn a_wiped_server_lets_a_machine_create_its_vault_again() {
+    let data = tempfile::tempdir().unwrap();
+    let server = Server::start(data.path(), Limits { max_vaults: 1, ..Limits::default() }).await;
+    let vault = server.vault();
+    let lost = vault.create("before").await;
+    server.stop().await;
+    std::fs::remove_dir_all(data.path()).unwrap();
+
+    let server = Server::start(data.path(), Limits { max_vaults: 1, ..Limits::default() }).await;
+    let vault = server.open(&vault.id, vault.token);
+    assert_eq!(vault.get().send().await.unwrap().status(), StatusCode::NOT_FOUND);
+    let stale = vault.replace(&lost, "after").await;
+    assert_eq!((stale.status(), etag(&stale)), (StatusCode::PRECONDITION_FAILED, None));
+    let created = vault.create("after").await;
+    assert_eq!(vault.body().await, (Some(created), "after".to_owned()));
     server.stop().await;
 }
 

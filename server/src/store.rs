@@ -37,7 +37,6 @@ pub struct Write {
     pub vault: VaultId,
     pub token: AuthToken,
     pub precondition: Precondition,
-    pub setup_token: Option<Vec<u8>>,
     pub bytes: Vec<u8>,
 }
 
@@ -89,11 +88,6 @@ impl Store {
             }
             (None, Precondition::Replace(_)) => return Err(Reject::PreconditionFailed(None)),
             (None, Precondition::Create) => {
-                if let Some(setup_token) = &limits.setup_token
-                    && !setup_token.admits(write.setup_token.as_deref())
-                {
-                    return Err(Reject::SetupTokenRefused);
-                }
                 let vaults: i64 = transaction.query_row("SELECT COUNT(*) FROM vaults", [], |row| row.get(0))?;
                 if vaults.unsigned_abs() >= limits.max_vaults {
                     return Err(Reject::VaultLimitReached);

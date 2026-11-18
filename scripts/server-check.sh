@@ -10,7 +10,6 @@ max_bytes=64
 max_vaults=3
 random() { od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; }
 now_ms() { echo $((${EPOCHREALTIME/./} / 1000)); }
-setup=$(random)
 pid=
 container=
 volume=
@@ -30,7 +29,7 @@ case $mode in
     (cd server && cargo build --release --locked --quiet)
     start() {
       env -i BRONZE_SYNC_LISTEN=127.0.0.1:0 BRONZE_SYNC_DATA="$work/data" BRONZE_SYNC_MAX_BYTES=$max_bytes \
-        BRONZE_SYNC_MAX_VAULTS=$max_vaults BRONZE_SYNC_SETUP_TOKEN="$setup" server/target/release/bronze-sync 2> "$work/log" &
+        BRONZE_SYNC_MAX_VAULTS=$max_vaults server/target/release/bronze-sync 2> "$work/log" &
       pid=$!
       for _ in $(seq 50); do grep -q 'listening on' "$work/log" && break; sleep 0.1; done
       grep -qx "bronze-sync listening on 127.0.0.1:[0-9]*, data in $work/data" "$work/log" || fail "start line: $(cat "$work/log")"
@@ -42,7 +41,7 @@ case $mode in
     volume=$(docker volume create --label fleet.worktree="$(git rev-parse --show-toplevel)" "bronze-sync-check-$$")
     start() {
       container=$(docker run -d --label fleet.worktree="$(git rev-parse --show-toplevel)" -p 127.0.0.1::8787 -v "$volume:/data" \
-        -e BRONZE_SYNC_MAX_BYTES=$max_bytes -e BRONZE_SYNC_MAX_VAULTS=$max_vaults -e BRONZE_SYNC_SETUP_TOKEN="$setup" "$image")
+        -e BRONZE_SYNC_MAX_BYTES=$max_bytes -e BRONZE_SYNC_MAX_VAULTS=$max_vaults "$image")
       for _ in $(seq 150); do
         [[ $(docker inspect -f '{{.State.Health.Status}}' "$container") == healthy ]] && break
         sleep 0.2
@@ -80,14 +79,11 @@ oversized="${board}a"
 
 expect 200 "health" "$base/health"
 expect 428 "a write without If-Match or If-None-Match" -X PUT -H "$(auth "$token")" --data-binary one "$(url "$vault")"
-expect 403 "creating without the setup token" -X PUT -H "$(auth "$token")" -H 'If-None-Match: *' --data-binary one "$(url "$vault")"
-expect 403 "creating with a wrong setup token" -X PUT -H "$(auth "$token")" -H 'If-None-Match: *' \
-  -H "Bronze-Setup-Token: $(random)" --data-binary one "$(url "$vault")"
 expect 413 "creating a board over the size cap" -X PUT -H "$(auth "$token")" -H 'If-None-Match: *' \
-  -H "Bronze-Setup-Token: $setup" --data-binary "$oversized" "$(url "$vault")"
+  --data-binary "$oversized" "$(url "$vault")"
 expect 404 "reading a vault that does not exist" -H "$(auth "$token")" "$(url "$vault")"
-expect 201 "creating with the setup token" -X PUT -H "$(auth "$token")" -H 'If-None-Match: *' \
-  -H "Bronze-Setup-Token: $setup" --data-binary "$board" "$(url "$vault")"
+expect 201 "creating the vault" -X PUT -H "$(auth "$token")" -H 'If-None-Match: *' \
+  --data-binary "$board" "$(url "$vault")"
 v1=$(etag)
 expect 200 "reading the board" -H "$(auth "$token")" "$(url "$vault")"
 [[ $(cat "$work/body") == "$board" && $(etag) == "$v1" ]] || fail "read returned other bytes or version"
@@ -102,7 +98,7 @@ v2=$(etag)
 expect 412 "replacing a stale version" -X PUT -H "$(auth "$token")" -H "If-Match: $v1" --data-binary three "$(url "$vault")"
 [[ $(etag) == "$v2" ]] || fail "412 did not carry the current version"
 expect 412 "creating a vault that exists" -X PUT -H "$(auth "$token")" -H 'If-None-Match: *' \
-  -H "Bronze-Setup-Token: $setup" --data-binary four "$(url "$vault")"
+  --data-binary four "$(url "$vault")"
 [[ $(etag) == "$v2" ]] || fail "412 did not carry the current version"
 expect 412 "replacing a vault that does not exist" -X PUT -H "$(auth "$token")" -H "If-Match: $v1" --data-binary x "$(url "$(random)")"
 [[ -z $(etag) ]] || fail "412 for a missing vault carried a version"
@@ -111,10 +107,10 @@ expect 413 "replacing with a board over the size cap" -X PUT -H "$(auth "$token"
 
 for n in $(seq 2 $max_vaults); do
   expect 201 "creating vault $n of $max_vaults" -X PUT -H "$(auth "$token")" -H 'If-None-Match: *' \
-    -H "Bronze-Setup-Token: $setup" --data-binary x "$(url "$(random)")"
+    --data-binary x "$(url "$(random)")"
 done
 expect 403 "creating a vault over the cap" -X PUT -H "$(auth "$token")" -H 'If-None-Match: *' \
-  -H "Bronze-Setup-Token: $setup" --data-binary x "$(url "$(random)")"
+  --data-binary x "$(url "$(random)")"
 
 began=$(now_ms)
 expect 200 "a long-poll on an old version answers at once" -H "$(auth "$token")" -H "If-None-Match: $v1" \

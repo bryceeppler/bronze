@@ -24,8 +24,11 @@ docker run -d -p 127.0.0.1:8787:8787 -v bronze-sync:/data bronze-sync
 | `BRONZE_SYNC_DATA` | required | Folder for `bronze-sync.sqlite3`, created if missing |
 | `BRONZE_SYNC_LISTEN` | `127.0.0.1:8787` | Address and port to listen on |
 | `BRONZE_SYNC_MAX_BYTES` | `8388608` | Largest sealed board, in bytes |
-| `BRONZE_SYNC_MAX_VAULTS` | `100` | Most vaults this server creates |
-| `BRONZE_SYNC_SETUP_TOKEN` | unset | When set, creating a vault needs it in the `Bronze-Setup-Token` header |
+| `BRONZE_SYNC_MAX_VAULTS` | `16` | Most vaults this server creates |
+
+Anyone who can reach the server can create vaults until it holds `BRONZE_SYNC_MAX_VAULTS` of them.
+If you run the server for yourself, set it to the number of vaults you use.
+If the server is wiped, your machines create their vaults again the next time they sync.
 
 ## Check
 
