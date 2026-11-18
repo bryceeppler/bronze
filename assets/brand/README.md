@@ -1,7 +1,7 @@
 # Bronze brand
 
-The mark is a capital B built from two stacked note cards, and the slot in each card is a line of text.
-The wordmark is drawn by hand as monoline geometric lowercase, so it needs no font.
+The mark is an ingot: a bar of bronze, the material the app is named for.
+The wordmark is BRONZE in Unbounded SemiBold capitals, outlined to paths, so it needs no font installed; Unbounded is under the SIL Open Font License.
 
 | File | Use |
 | --- | --- |
@@ -26,7 +26,6 @@ It needs `resvg` (`cargo install resvg`) and Python with Pillow.
 The macOS icons sit on Apple's 1024 grid with an 824 body and its drop shadow, and the Windows and Linux icons fill 15/16 of the canvas.
 Copy a `hicolor` folder into `/usr/share/icons` or `~/.local/share/icons` and set `Icon=ca.bryce.bronze` in the desktop file.
 
-`explore/` holds four candidate logo directions; see its README.
 
 ## Colors
 
@@ -34,7 +33,7 @@ Copy a `hicolor` folder into `/usr/share/icons` or `~/.local/share/icons` and se
 | --- | --- | --- |
 | Bronze | `#cd7f32` | The app's accent in dark mode |
 | Deep bronze | `#a3612a` | The app's accent in light mode |
-| Metal, for dark backgrounds | `#f4c590` to `#d78c4b` to `#9a5526` | The mark |
-| Metal, for light backgrounds | `#e09d5e` to `#b8692f` to `#7a3f18` | The mark |
+| Metal, for dark backgrounds | `#f4c590` to `#d78c4b` on the top face, `#d78c4b` to `#9a5526` on the front | The ingot |
+| Metal, for light backgrounds | `#e09d5e` to `#b8692f` on the top face, `#b8692f` to `#7a3f18` on the front | The ingot |
 | Ink | `#1c1c1e` | Wordmark on light, and the app's dark background |
 | Paper | `#ececee` | Wordmark on dark, and the app's dark-mode text |

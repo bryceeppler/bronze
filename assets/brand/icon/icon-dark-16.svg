@@ -1,11 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="geometricPrecision">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
   <defs>
     <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b3531"/><stop offset="1" stop-color="#1d1b19"/></linearGradient>
   </defs>
   <rect width="16" height="16" rx="3.5" fill="url(#tile)"/>
   <rect x="0.25" y="0.25" width="15.5" height="15.5" rx="3.25" fill="none" stroke="#ffffff1f" stroke-width="0.5"/>
-  <g fill="#dc914f" fill-rule="evenodd">
-    <path d="M5 2h3.5a2.5 2.5 0 0 1 0 5H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1ZM6 4v1h3V4Z"/>
-    <path d="M5 8h4.5a2.5 2.5 0 0 1 0 5H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1ZM6 10v1h4v-1Z"/>
-  </g>
+  <path fill="#f2bd85" d="M5 4H11L12.5 6H3.5Z"/>
+  <path fill="#d78c4b" d="M3.5 6H12.5L14 12H2Z"/>
 </svg>
