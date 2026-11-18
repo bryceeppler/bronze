@@ -75,7 +75,7 @@ enum Source {
     PressedCopy,
 }
 
-pub fn selected_text(reply: impl FnOnce(Option<String>)) {
+pub fn selected_text() -> Option<String> {
     let (source, text) = match access() {
         Access::Missing => (Source::Clipboard, pasteboard_text(&NSPasteboard::generalPasteboard())),
         Access::Granted => match focused_selection() {
@@ -85,7 +85,7 @@ pub fn selected_text(reply: impl FnOnce(Option<String>)) {
     };
     let count = text.as_deref().map_or(0, |text| text.chars().count());
     eprintln!("bronze: captured {count} characters via {source:?}");
-    reply(text);
+    text
 }
 
 fn focused_selection() -> Option<String> {

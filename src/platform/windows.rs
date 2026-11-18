@@ -44,7 +44,6 @@ const AUTOMATION_TIMEOUT_MS: u32 = 300;
 const MODIFIER_WAIT: Duration = Duration::from_secs(1);
 const COPY_WAIT: Duration = Duration::from_millis(500);
 const OPEN_WAIT: Duration = Duration::from_millis(250);
-const TAIL_WAIT: Duration = Duration::from_millis(250);
 const POLL: Duration = Duration::from_millis(10);
 const CONVERTIBLE: [[CLIPBOARD_FORMAT; 3]; 2] = [[CF_UNICODETEXT, CF_TEXT, CF_OEMTEXT], [CF_BITMAP, CF_DIB, CF_DIBV5]];
 const MODIFIERS: [VIRTUAL_KEY; 5] = [VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN];
@@ -70,17 +69,15 @@ enum Source {
     PressedCopy,
 }
 
-pub fn selected_text(reply: impl FnOnce(Option<String>)) {
-    let deliver = |source: Source, text: Option<String>| {
-        let text = text.map(|text| unix_lines(&text));
-        let count = text.as_deref().map_or(0, |text| text.chars().count());
-        eprintln!("bronze: captured {count} characters via {source:?}");
-        reply(text);
+pub fn selected_text() -> Option<String> {
+    let (source, text) = match focused_selection() {
+        Some(text) => (Source::FocusedApp, Some(text)),
+        None => (Source::PressedCopy, copied_selection()),
     };
-    match focused_selection() {
-        Some(text) => deliver(Source::FocusedApp, Some(text)),
-        None => copied_selection(|text| deliver(Source::PressedCopy, text)),
-    }
+    let text = text.map(|text| unix_lines(&text));
+    let count = text.as_deref().map_or(0, |text| text.chars().count());
+    eprintln!("bronze: captured {count} characters via {source:?}");
+    text
 }
 
 fn unix_lines(text: &str) -> String {
@@ -123,29 +120,19 @@ impl Drop for Com {
 
 static CLIPBOARD: Mutex<()> = Mutex::new(());
 
-fn copied_selection(reply: impl FnOnce(Option<String>)) {
+fn copied_selection() -> Option<String> {
     let _only_copy = CLIPBOARD.lock().unwrap_or_else(PoisonError::into_inner);
-    let released = within(MODIFIER_WAIT, || (!MODIFIERS.into_iter().any(is_down)).then_some(()));
-    let Some(saved) = released.and_then(|()| Some(Clipboard::open()?.contents())) else { return reply(None) };
+    within(MODIFIER_WAIT, || (!MODIFIERS.into_iter().any(is_down)).then_some(()))?;
+    let saved = Clipboard::open()?.contents();
     let before = sequence();
     press_copy();
     let text = within(COPY_WAIT, || (sequence() != before).then(|| Clipboard::open()?.text()).flatten());
-    let ours = (sequence() != before).then(|| restore(&saved)).flatten();
-    reply(text);
-    guard_tail(&saved, ours);
-}
-
-fn guard_tail(saved: &Contents, mut ours: Option<u32>) {
-    let deadline = Instant::now() + TAIL_WAIT;
-    while let Some(seen) = ours {
-        let left = deadline.saturating_duration_since(Instant::now());
-        ours = within(left, || (sequence() != seen).then_some(())).and_then(|()| restore(saved));
+    if sequence() != before
+        && let Some(clipboard) = Clipboard::open()
+    {
+        clipboard.replace(&saved);
     }
-}
-
-fn restore(saved: &Contents) -> Option<u32> {
-    Clipboard::open()?.replace(saved);
-    Some(sequence())
+    text
 }
 
 fn within<T>(limit: Duration, mut ready: impl FnMut() -> Option<T>) -> Option<T> {

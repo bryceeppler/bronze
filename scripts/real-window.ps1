@@ -317,7 +317,6 @@ public class EditWindow : Form
 
 public class CopyWindow : Form
 {
-    readonly System.Windows.Forms.Timer tail = new System.Windows.Forms.Timer { Interval = 150 };
     public volatile string Copied;
     public volatile int Copies;
 
@@ -332,12 +331,6 @@ public class CopyWindow : Form
         {
             if (args.KeyData != (Keys.Control | Keys.Insert)) return;
             Copies++;
-            Desk.WriteClipboard(Handle, Copied, null);
-            tail.Start();
-        };
-        tail.Tick += (sender, args) =>
-        {
-            tail.Stop();
             Desk.WriteClipboard(Handle, Copied, "<b>" + Copied + "</b>");
         };
     }
@@ -451,12 +444,16 @@ try {
     [Desk]::WriteClipboard([IntPtr]::Zero, 'clipboard before the copy capture', $null)
     [Desk]::Play($copy.Handle, '+LShift 40 -LShift 120 +LShift 40 -LShift')
     Captured $copyText 'PressedCopy' 'double-tap in a window that hides its text'
+    if ([Desk]::ClipboardText() -ne 'clipboard before the copy capture' -or [Desk]::ClipboardHas('HTML Format')) {
+        Fail "the clipboard was not put back: '$([Desk]::ClipboardText())'"
+    }
+    [Desk]::WriteClipboard([IntPtr]::Zero, 'copied right after the capture', $null)
     Start-Sleep -Milliseconds 600
     if ($copy.Copies -ne 1) { Fail "the copy window saw $($copy.Copies) Ctrl+Insert presses, not 1" }
-    if ([Desk]::ClipboardText() -ne 'clipboard before the copy capture' -or [Desk]::ClipboardHas('HTML Format')) {
-        Fail "the clipboard was not put back after the late second write: '$([Desk]::ClipboardText())'"
+    if ([Desk]::ClipboardText() -ne 'copied right after the capture') {
+        Fail "a copy made right after the capture was lost: '$([Desk]::ClipboardText())'"
     }
-    Pass 'double-tap Left Shift pressed Ctrl+Insert once, captured via PressedCopy and put the clipboard back after the late second write'
+    Pass 'double-tap Left Shift pressed Ctrl+Insert once, captured via PressedCopy, put the clipboard back and left a later copy alone'
 
     $copy.Copied = $chordText
     Focus $copy 'the copy window'
