@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::mem::size_of;
 use std::path::Path;
 use std::process::Command;
@@ -6,7 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use std::{ptr, slice};
 
-use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
+use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HINSTANCE, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
 };
@@ -14,6 +15,7 @@ use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardSequenceNumber, OpenClipboard,
     RegisterClipboardFormatW, SetClipboardData,
 };
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock};
 use windows::Win32::System::Ole::{
     CF_BITMAP, CF_DIB, CF_DIBV5, CF_DSPENHMETAFILE, CF_ENHMETAFILE, CF_GDIOBJFIRST, CF_GDIOBJLAST, CF_METAFILEPICT,
@@ -23,13 +25,17 @@ use windows::Win32::System::Ole::{
 use windows::Win32::UI::Accessibility::{CUIAutomation8, IUIAutomation2, IUIAutomationTextPattern, UIA_TextPatternId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
-    KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, MapVirtualKeyW, SendInput, VIRTUAL_KEY, VK_CONTROL, VK_INSERT, VK_LWIN, VK_MENU,
-    VK_RWIN, VK_SHIFT,
+    KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, MapVirtualKeyW, SendInput, VIRTUAL_KEY, VK_CONTROL, VK_INSERT, VK_LBUTTON,
+    VK_LSHIFT, VK_LWIN, VK_MBUTTON, VK_MENU, VK_RBUTTON, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_XBUTTON1, VK_XBUTTON2,
 };
-use windows::core::w;
+use windows::Win32::UI::WindowsAndMessaging::{
+    CallNextHookEx, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, KillTimer, MSG, SetTimer, SetWindowsHookExW,
+    UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN, WM_TIMER,
+};
+use windows::core::{PCWSTR, w};
 
 use super::Access;
-use crate::taps::Gesture;
+use crate::taps::{Detector, Gesture, Input, Side, TAP_WINDOW};
 
 const AUTOMATION_TIMEOUT_MS: u32 = 300;
 const MODIFIER_WAIT: Duration = Duration::from_secs(1);
@@ -39,8 +45,9 @@ const TAIL_WAIT: Duration = Duration::from_millis(250);
 const POLL: Duration = Duration::from_millis(10);
 const CONVERTIBLE: [[CLIPBOARD_FORMAT; 3]; 2] = [[CF_UNICODETEXT, CF_TEXT, CF_OEMTEXT], [CF_BITMAP, CF_DIB, CF_DIBV5]];
 const MODIFIERS: [VIRTUAL_KEY; 5] = [VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN];
-
-pub fn listen(_on_gesture: impl Fn(Gesture) + Send + 'static) {}
+const BUTTONS: [VIRTUAL_KEY; 5] = [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2];
+const BUTTON_POLL_MS: u32 = 10;
+const RIGHT_SHIFT_SCAN: u32 = 0x36;
 
 pub fn access() -> Access {
     Access::Granted
@@ -277,9 +284,285 @@ fn utf16_text(bytes: &[u8]) -> String {
     String::from_utf16_lossy(&units)
 }
 
+pub fn listen(on_gesture: impl Fn(Gesture) + Send + 'static) {
+    thread::Builder::new()
+        .name("bronze-shift-listener".into())
+        .spawn(move || hear(Box::new(on_gesture)))
+        .expect("spawn the Shift listener");
+}
+
+thread_local! {
+    static LISTENER: RefCell<Option<Listener>> = const { RefCell::new(None) };
+}
+
+struct Listener {
+    ear: Ear,
+    started: Instant,
+    timer: Option<usize>,
+    on_gesture: Box<dyn Fn(Gesture)>,
+}
+
+fn hear(on_gesture: Box<dyn Fn(Gesture)>) {
+    LISTENER.set(Some(Listener { ear: Ear::default(), started: Instant::now(), timer: None, on_gesture }));
+    let module = unsafe { GetModuleHandleW(PCWSTR::null()) }.ok().map(HINSTANCE::from);
+    let hook = match unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(on_key), module, 0) } {
+        Ok(hook) => hook,
+        Err(error) => return eprintln!("bronze: cannot listen for Shift gestures: {error}"),
+    };
+    eprintln!("bronze: listening for Shift gestures");
+    let mut message = MSG::default();
+    while unsafe { GetMessageW(&mut message, None, 0, 0) }.0 > 0 {
+        if message.message == WM_TIMER {
+            notice(Event::Tick { button: BUTTONS.into_iter().any(is_down) });
+        }
+    }
+    let _ = unsafe { UnhookWindowsHookEx(hook) };
+}
+
+unsafe extern "system" fn on_key(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code == HC_ACTION as i32 {
+        let key = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+        let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
+        notice(Event::Key(Stroke { key: Key::of(key.vkCode, key.scanCode), down }));
+    }
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+fn notice(event: Event) {
+    LISTENER.with_borrow_mut(|listener| {
+        if let Some(listener) = listener {
+            listener.notice(event);
+        }
+    });
+}
+
+impl Listener {
+    fn notice(&mut self, event: Event) {
+        let at = self.started.elapsed();
+        let before = Shifts { left: is_down(VK_LSHIFT), right: is_down(VK_RSHIFT) };
+        if let Some(gesture) = self.ear.hear(before, event, at) {
+            (self.on_gesture)(gesture);
+        }
+        match (self.ear.watching_buttons(at), self.timer) {
+            (true, None) => self.timer = Some(unsafe { SetTimer(None, 0, BUTTON_POLL_MS, None) }).filter(|&id| id != 0),
+            (false, Some(id)) => {
+                let _ = unsafe { KillTimer(None, id) };
+                self.timer = None;
+            }
+            _ => {}
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+struct Shifts {
+    left: bool,
+    right: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Key {
+    Shift(Side),
+    Other,
+}
+
+#[derive(Clone, Copy)]
+struct Stroke {
+    key: Key,
+    down: bool,
+}
+
+#[derive(Clone, Copy)]
+enum Event {
+    Key(Stroke),
+    Tick { button: bool },
+}
+
+#[derive(Default)]
+struct Ear {
+    detector: Detector,
+    fed: Shifts,
+    released: Option<Duration>,
+}
+
+impl Shifts {
+    fn down(self, side: Side) -> bool {
+        match side {
+            Side::Left => self.left,
+            Side::Right => self.right,
+        }
+    }
+
+    fn with(self, side: Side, down: bool) -> Shifts {
+        match side {
+            Side::Left => Shifts { left: down, ..self },
+            Side::Right => Shifts { right: down, ..self },
+        }
+    }
+}
+
+impl Key {
+    fn of(code: u32, scan: u32) -> Key {
+        match VIRTUAL_KEY(code as u16) {
+            VK_LSHIFT => Key::Shift(Side::Left),
+            VK_RSHIFT => Key::Shift(Side::Right),
+            VK_SHIFT if scan == RIGHT_SHIFT_SCAN => Key::Shift(Side::Right),
+            VK_SHIFT => Key::Shift(Side::Left),
+            _ => Key::Other,
+        }
+    }
+}
+
+impl Ear {
+    fn hear(&mut self, before: Shifts, event: Event, at: Duration) -> Option<Gesture> {
+        let mut gesture = None;
+        for input in self.inputs(before, event) {
+            if let Input::Shift { pressed: false, .. } = input {
+                self.released = Some(at);
+            }
+            gesture = gesture.or(self.detector.feed(input, at));
+        }
+        gesture
+    }
+
+    fn inputs(&mut self, before: Shifts, event: Event) -> Vec<Input> {
+        let mut inputs = Vec::new();
+        for side in [Side::Left, Side::Right] {
+            if self.fed.down(side) && !before.down(side) {
+                self.fed = self.fed.with(side, false);
+                inputs.push(Input::Shift { side, pressed: false });
+            }
+        }
+        match event {
+            Event::Key(Stroke { key: Key::Shift(side), down }) if self.fed.down(side) != down => {
+                self.fed = self.fed.with(side, down);
+                inputs.push(Input::Shift { side, pressed: down });
+            }
+            Event::Key(Stroke { key: Key::Other, down: true }) | Event::Tick { button: true } => {
+                inputs.push(Input::Other)
+            }
+            Event::Key(_) | Event::Tick { button: false } => {}
+        }
+        inputs
+    }
+
+    fn watching_buttons(&self, at: Duration) -> bool {
+        self.fed != Shifts::default() || self.released.is_some_and(|released| at.saturating_sub(released) < TAP_WINDOW)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{restorable, unix_lines, utf16_text};
+    use std::time::Duration;
+
+    use super::{Ear, Event, Key, Shifts, Stroke, restorable, unix_lines, utf16_text};
+    use crate::taps::{Gesture, Side, TAP_WINDOW};
+
+    const NONE: Shifts = Shifts { left: false, right: false };
+    const LEFT: Shifts = Shifts { left: true, right: false };
+    const RIGHT: Shifts = Shifts { left: false, right: true };
+
+    fn shift(side: Side, down: bool) -> Event {
+        Event::Key(Stroke { key: Key::Shift(side), down })
+    }
+
+    fn letter(down: bool) -> Event {
+        Event::Key(Stroke { key: Key::Other, down })
+    }
+
+    fn hear(timeline: &[(u64, Shifts, Event)]) -> Vec<(u64, Gesture)> {
+        let mut ear = Ear::default();
+        timeline
+            .iter()
+            .filter_map(|&(ms, before, event)| {
+                ear.hear(before, event, Duration::from_millis(ms)).map(|gesture| (ms, gesture))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_double_tap_heard_by_the_hook_fires_on_the_second_release() {
+        let left = |down| shift(Side::Left, down);
+        let fired =
+            hear(&[(0, NONE, left(true)), (80, LEFT, left(false)), (200, NONE, left(true)), (260, LEFT, left(false))]);
+        assert_eq!(fired, [(260, Gesture::DoubleLeftShift)]);
+    }
+
+    #[test]
+    fn a_release_the_hook_never_heard_does_not_leave_shift_held() {
+        let fired = hear(&[
+            (0, NONE, shift(Side::Left, true)),
+            (5000, NONE, shift(Side::Right, true)),
+            (5080, RIGHT, shift(Side::Right, false)),
+        ]);
+        assert_eq!(fired, []);
+    }
+
+    #[test]
+    fn the_first_double_tap_after_a_release_the_hook_never_heard_fires() {
+        let left = |down| shift(Side::Left, down);
+        let fired = hear(&[
+            (0, NONE, left(true)),
+            (5000, NONE, left(true)),
+            (5080, LEFT, left(false)),
+            (5200, NONE, left(true)),
+            (5260, LEFT, left(false)),
+        ]);
+        assert_eq!(fired, [(5260, Gesture::DoubleLeftShift)]);
+    }
+
+    #[test]
+    fn a_mouse_button_down_during_the_taps_cancels_them() {
+        let left = |down| shift(Side::Left, down);
+        for (button, expected) in [(true, vec![]), (false, vec![(240, Gesture::DoubleLeftShift)])] {
+            let tick = Event::Tick { button };
+            let fired = hear(&[
+                (0, NONE, left(true)),
+                (40, LEFT, tick),
+                (90, LEFT, left(false)),
+                (160, NONE, left(true)),
+                (200, LEFT, tick),
+                (240, LEFT, left(false)),
+            ]);
+            assert_eq!(fired, expected, "button down: {button}");
+        }
+    }
+
+    #[test]
+    fn only_pressing_another_key_cancels_a_tap() {
+        let left = |down| shift(Side::Left, down);
+        let tap_with = |other| {
+            hear(&[
+                (0, NONE, left(true)),
+                (30, LEFT, other),
+                (80, LEFT, left(false)),
+                (200, NONE, left(true)),
+                (260, LEFT, left(false)),
+            ])
+        };
+        assert_eq!(tap_with(letter(false)), [(260, Gesture::DoubleLeftShift)]);
+        assert_eq!(tap_with(letter(true)), []);
+    }
+
+    #[test]
+    fn the_mouse_is_watched_only_while_a_shift_is_down_or_just_released() {
+        let mut ear = Ear::default();
+        let at = Duration::from_millis;
+        assert!(!ear.watching_buttons(at(0)));
+        ear.hear(NONE, shift(Side::Left, true), at(0));
+        assert!(ear.watching_buttons(at(5000)));
+        ear.hear(NONE, Event::Tick { button: false }, at(5000));
+        assert!(ear.watching_buttons(at(5000) + TAP_WINDOW - at(1)));
+        assert!(!ear.watching_buttons(at(5000) + TAP_WINDOW));
+    }
+
+    #[test]
+    fn a_generic_shift_code_takes_its_side_from_the_scan_code() {
+        assert_eq!(Key::of(0x10, 0x2A), Key::Shift(Side::Left));
+        assert_eq!(Key::of(0x10, 0x36), Key::Shift(Side::Right));
+        assert_eq!(Key::of(0xA1, 0x36), Key::Shift(Side::Right));
+        assert_eq!(Key::of(0x41, 0x1E), Key::Other);
+    }
 
     #[test]
     fn clipboard_text_ends_at_its_terminator_and_keeps_every_character() {
