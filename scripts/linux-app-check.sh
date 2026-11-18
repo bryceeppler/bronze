@@ -11,7 +11,8 @@ trap cleanup EXIT
 export CARGO_HOME=${CARGO_HOME:-$HOME/.cargo} RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}
 export HOME=$tmp/home XDG_DATA_HOME=$tmp/data XDG_CONFIG_HOME=$tmp/config XDG_CACHE_HOME=$tmp/cache
 mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
-entry=$XDG_DATA_HOME/applications/bronze.desktop
+entry=$XDG_DATA_HOME/applications/ca.bryce.bronze.desktop
+theme=assets/brand/icon/linux/dark/hicolor
 log=$tmp/bronze.log
 
 pass() { echo "linux app: $1"; }
@@ -21,11 +22,14 @@ installed() { (cd "$tmp" && find home data config -path data/bronze -prune -o -t
 
 ./scripts/linux-app.sh --autostart > "$tmp/install.log" 2>&1 || { cat "$tmp/install.log"; exit 1; }
 first=$(installed)
-expected=$(printf '%s\n' config/autostart/bronze.desktop data/applications/bronze.desktop \
-  data/icons/hicolor/scalable/apps/bronze.svg home/.local/bin/bronze)
-[ "$(awk '{print $2}' <<< "$first")" = "$expected" ] && pass "installed exactly the binary, icon, launcher entry and login entry" \
+expected=$( (printf '%s\n' config/autostart/ca.bryce.bronze.desktop data/applications/ca.bryce.bronze.desktop home/.local/bin/bronze
+  find "$theme" -type f -printf 'data/icons/hicolor/%P\n') | sort)
+[ "$(awk '{print $2}' <<< "$first")" = "$expected" ] \
+  && pass "installed exactly the binary, $(find "$theme" -type f | wc -l) icons, launcher entry and login entry" \
   || fail "installed files: $(awk '{print $2}' <<< "$first")"
-desktop-file-validate "$entry" "$XDG_CONFIG_HOME/autostart/bronze.desktop" && pass "both entries pass desktop-file-validate" \
+diff -r "$theme" "$XDG_DATA_HOME/icons/hicolor" && pass "the icons are the brand's dark hicolor set, byte for byte" \
+  || fail "the installed icons differ from $theme"
+desktop-file-validate "$entry" "$XDG_CONFIG_HOME/autostart/ca.bryce.bronze.desktop" && pass "both entries pass desktop-file-validate" \
   || fail "desktop-file-validate"
 [ -x "$HOME/.local/bin/bronze" ] || fail "the binary is not executable"
 
@@ -34,6 +38,16 @@ pids+=($!)
 unset WAYLAND_DISPLAY
 export DISPLAY=$display VK_ICD_FILENAMES=${VK_ICD_FILENAMES:-/usr/share/vulkan/icd.d/lvp_icd.json}
 wait_for 'xdpyinfo > /dev/null 2>&1' || fail "Xvfb never started"
+lookup=$(GDK_BACKEND=x11 python3 -I -c '
+import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gdk, Gtk
+Gtk.init()
+theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+print(theme.lookup_icon("ca.bryce.bronze", None, 48, 1, Gtk.TextDirection.NONE, 0).get_file().get_path())
+' 2> /dev/null)
+[ "$lookup" = "$XDG_DATA_HOME/icons/hicolor/48x48/apps/ca.bryce.bronze.png" ] \
+  && pass "GTK resolves Icon=ca.bryce.bronze at 48 px to the installed 48x48 icon" || fail "GTK icon lookup gave $lookup"
 
 gio launch "$entry" > "$log" 2>&1 || fail "gio launch"
 wait_for 'window=$(xdotool search --onlyvisible --name "^Bronze$" 2> /dev/null | head -1) && [ -n "$window" ]' \

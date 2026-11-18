@@ -10,9 +10,10 @@ esac
 data=${XDG_DATA_HOME:-$HOME/.local/share}
 config=${XDG_CONFIG_HOME:-$HOME/.config}
 bin=$HOME/.local/bin/bronze
-icon=$data/icons/hicolor/scalable/apps/bronze.svg
-entry=$data/applications/bronze.desktop
-autostart=$config/autostart/bronze.desktop
+theme=assets/brand/icon/linux/dark/hicolor
+entry=$data/applications/ca.bryce.bronze.desktop
+autostart=$config/autostart/ca.bryce.bronze.desktop
+mapfile -t icons < <(find "$theme" -type f -printf '%P\n' | sort)
 
 prune() {
   local dir
@@ -24,7 +25,7 @@ prune() {
 }
 
 if [ "$mode" = --uninstall ]; then
-  for file in "$bin" "$icon" "$entry" "$autostart"; do
+  for file in "$bin" "$entry" "$autostart" "${icons[@]/#/"$data/icons/hicolor/"}"; do
     rm -f "$file"
     prune "$file"
   done
@@ -46,7 +47,7 @@ cargo build --release
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
 staged=target/linux-app
 mkdir -p "$staged"
-cat > "$staged/bronze.desktop" <<ENTRY
+cat > "$staged/ca.bryce.bronze.desktop" <<ENTRY
 [Desktop Entry]
 Type=Application
 Version=1.5
@@ -54,7 +55,7 @@ Name=Bronze
 GenericName=Capture Panel
 Comment=Capture selected text into a local to-do list, clipboard and scratchpad
 Exec="$bin"
-Icon=bronze
+Icon=ca.bryce.bronze
 Terminal=false
 Categories=Utility;
 Keywords=notes;clipboard;capture;prompts;
@@ -62,9 +63,9 @@ StartupWMClass=bronze
 ENTRY
 
 place target/release/bronze "$bin" 755
-place assets/icon.svg "$icon" 644
-place "$staged/bronze.desktop" "$entry" 644
-[ "$mode" != --autostart ] || place "$staged/bronze.desktop" "$autostart" 644
+for icon in "${icons[@]}"; do place "$theme/$icon" "$data/icons/hicolor/$icon" 644; done
+place "$staged/ca.bryce.bronze.desktop" "$entry" 644
+[ "$mode" != --autostart ] || place "$staged/ca.bryce.bronze.desktop" "$autostart" 644
 
 echo "linux-app: installed $bin ($version) and Bronze in the app launcher"
 [ "$mode" != --autostart ] || echo "linux-app: Bronze starts at login"
