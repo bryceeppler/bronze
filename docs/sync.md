@@ -50,6 +50,7 @@ Neither the vault id nor the token reveals the key or the encryption key.
 
 Each machine keeps the server address and the key in `sync.json` in its notes folder, written with mode `0600` on Unix.
 Choosing **Stop Syncing** turns sync off at once and removes that file.
+A request that was already on its way when you stopped may still finish, and Bronze sends nothing after it.
 Removing the file by hand turns sync off the next time Bronze starts; a running Bronze keeps syncing until then.
 
 ## The sealed snapshot
