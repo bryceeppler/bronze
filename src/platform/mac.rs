@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::ffi::c_void;
+use std::path::Path;
 use std::process::Command;
 use std::ptr::{self, NonNull};
 use std::sync::Mutex;
@@ -59,6 +60,12 @@ pub fn ask_for_access() {
     if let Err(error) = Command::new("open").arg(ACCESSIBILITY_SETTINGS).spawn() {
         eprintln!("bronze: cannot open the Accessibility settings: {error}");
     }
+}
+
+pub fn reveal_command(path: &Path) -> Command {
+    let mut command = Command::new("open");
+    command.arg("-R").arg(path);
+    command
 }
 
 #[derive(Debug)]

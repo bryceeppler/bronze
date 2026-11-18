@@ -1,15 +1,14 @@
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::thread;
 
-#[cfg(target_os = "macos")]
-mod mac;
+#[cfg_attr(target_os = "macos", path = "platform/mac.rs")]
+#[cfg_attr(target_os = "windows", path = "platform/windows.rs")]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), path = "platform/unix.rs")]
+mod os;
 
-#[cfg(target_os = "macos")]
-pub use mac::listen;
-#[cfg(target_os = "macos")]
-use mac::{access, ask_for_access, selected_text};
+pub use os::listen;
+use os::{access, ask_for_access, reveal_command, selected_text};
 
 pub type Reply = Box<dyn FnOnce(Option<String>) + Send>;
 
@@ -52,49 +51,6 @@ impl Platform for Native {
     fn ask_for_access(&self) {
         ask_for_access();
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn listen(_on_gesture: impl Fn(crate::taps::Gesture) + Send + 'static) {}
-
-#[cfg(not(target_os = "macos"))]
-fn access() -> Access {
-    Access::Granted
-}
-
-#[cfg(not(target_os = "macos"))]
-fn ask_for_access() {}
-
-#[cfg(target_os = "linux")]
-fn selected_text() -> Option<String> {
-    use arboard::{GetExtLinux, LinuxClipboardKind};
-    arboard::Clipboard::new().ok()?.get().clipboard(LinuxClipboardKind::Primary).text().ok()
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn selected_text() -> Option<String> {
-    arboard::Clipboard::new().ok()?.get_text().ok()
-}
-
-#[cfg(target_os = "macos")]
-fn reveal_command(path: &Path) -> Command {
-    let mut command = Command::new("open");
-    command.arg("-R").arg(path);
-    command
-}
-
-#[cfg(target_os = "windows")]
-fn reveal_command(path: &Path) -> Command {
-    let mut command = Command::new("explorer");
-    command.arg(format!("/select,{}", path.display()));
-    command
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn reveal_command(path: &Path) -> Command {
-    let mut command = Command::new("xdg-open");
-    command.arg(path.parent().unwrap_or(path));
-    command
 }
 
 pub struct Fake {

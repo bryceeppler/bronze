@@ -32,12 +32,25 @@ Open it, choose Open Settings in the notice, and turn Bronze on under Accessibil
 You grant this once; the notice goes away by itself.
 Then double-tap Left Shift to capture the selected text, and press Right Shift with Left Shift to show or hide Bronze.
 
+## Windows
+
+```powershell
+cargo build --release
+.\target\release\bronze.exe
+```
+
+Bronze needs no permission on Windows.
+Double-tap Left Shift to capture the selected text, and press Right Shift with Left Shift to show or hide Bronze.
+Both Shift gestures are ignored while a full-screen app such as a game is in front, and `Ctrl+Alt+C` and `Ctrl+Alt+Space` still work there.
+While an app running as administrator has focus, Windows keeps its keys and its text from Bronze, so the gestures do nothing there and capture finds nothing.
+The release build has no console window; run `.\target\release\bronze.exe 2> bronze.log` to keep its log.
+
 ## Shortcuts
 
 | Action | Shortcut |
 | --- | --- |
-| Capture the selected text, from any app | `Ctrl+Alt+C`, or double-tap Left Shift on the Mac |
-| Show or hide Bronze, from any app | `Ctrl+Alt+Space`, or Right Shift + Left Shift on the Mac |
+| Capture the selected text, from any app | `Ctrl+Alt+C`, or double-tap Left Shift on the Mac and Windows |
+| Show or hide Bronze, from any app | `Ctrl+Alt+Space`, or Right Shift + Left Shift on the Mac and Windows |
 | Create or open a section | type `# Name` |
 | Go to a section | `Ctrl/Cmd+K` |
 | Copy the selected notes | `Ctrl/Cmd+C` |
@@ -49,7 +62,8 @@ Then double-tap Left Shift to capture the selected text, and press Right Shift w
 On Linux, capture reads the text you have selected.
 On macOS it asks the focused app for its selection, and when the app does not say, presses Copy for you and puts your clipboard back afterwards.
 Without Accessibility access, macOS capture reads the clipboard, so copy first.
-On Windows it reads the clipboard for now, so copy first.
+On Windows it asks the focused app for its selection through UI Automation, and when the app does not say, presses Ctrl+Insert for you and puts your clipboard back afterwards.
+Ctrl+Insert copies like Ctrl+C in standard Windows controls, browsers, Electron apps and terminals, but with nothing selected it never interrupts a program running in a terminal.
 
 ## Check
 
@@ -57,5 +71,8 @@ On Windows it reads the clipboard for now, so copy first.
 ./scripts/check.sh        # format, lint, tests, every scene rendered headless, scripted runs
 ./scripts/real-window.sh  # a real window under Xvfb: capture, show and hide, remembered position
 ```
+
+On Windows, `scripts\real-window.ps1` drives real windows with injected keys: both capture paths, the chord held like a person holds it, show and hide, the timelines that must not capture, and the gestures over a full-screen app.
+It sends real key presses to the desktop, so it refuses to start while the session is locked or was used in the last 3 minutes unless you pass `-Force`.
 
 Renders and element trees land in `out/`.
