@@ -1,3 +1,4 @@
+use std::env;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -54,8 +55,13 @@ impl Drop for TestServer {
 }
 
 fn spawn(data: &Path, listen: &str, max_vaults: u32) -> (Child, String) {
-    let mut child = Command::new(binary())
-        .env_clear()
+    let mut command = Command::new(binary());
+    for (name, _) in
+        env::vars_os().filter(|(name, _)| name.to_string_lossy().to_ascii_uppercase().starts_with("BRONZE_SYNC_"))
+    {
+        command.env_remove(name);
+    }
+    let mut child = command
         .env("BRONZE_SYNC_LISTEN", listen)
         .env("BRONZE_SYNC_DATA", data)
         .env("BRONZE_SYNC_MAX_VAULTS", max_vaults.to_string())
@@ -67,14 +73,24 @@ fn spawn(data: &Path, listen: &str, max_vaults: u32) -> (Child, String) {
     let stderr = BufReader::new(child.stderr.take().expect("piped stderr"));
     let (heard, listening) = mpsc::channel();
     thread::spawn(move || {
+        let mut said = Vec::new();
         for line in stderr.lines().map_while(Result::ok) {
             eprintln!("{line}");
-            if let Some(rest) = line.strip_prefix("bronze-sync listening on ") {
-                _ = heard.send(rest.split(',').next().unwrap_or_default().to_owned());
+            match line.strip_prefix("bronze-sync listening on ") {
+                Some(rest) => _ = heard.send(Ok(rest.split(',').next().unwrap_or_default().to_owned())),
+                None => said.push(line),
             }
         }
+        _ = heard.send(Err(said.join("\n")));
     });
-    let listen = listening.recv_timeout(Duration::from_secs(10)).expect("bronze-sync says where it listens");
+    let listen = match listening.recv_timeout(Duration::from_secs(10)) {
+        Ok(Ok(listen)) => listen,
+        Ok(Err(said)) => {
+            let exit = child.wait().map_or_else(|error| error.to_string(), |status| status.to_string());
+            panic!("bronze-sync stopped before it said where it listens ({exit}); it said: {said}")
+        }
+        Err(waited) => panic!("bronze-sync never said where it listens: {waited}"),
+    };
     (child, listen)
 }
 
