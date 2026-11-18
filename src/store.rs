@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests;
 
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -10,7 +12,9 @@ use std::{fs, io, thread};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::board::{Board, Note, Restored, Scope};
+use crate::board::{
+    Board, DeviceId, NoteId, NoteRecord, Position, Rank, Reg, Replica, Restored, Scope, SectionId, SectionRecord, Stamp,
+};
 use crate::prefs::{Frame, Prefs};
 
 pub trait Document: Clone + Default + Send + 'static {
@@ -20,6 +24,10 @@ pub trait Document: Clone + Default + Send + 'static {
 
     fn to_file(&self) -> Self::File;
     fn from_file(file: Self::File) -> Self;
+
+    fn from_older(bytes: &[u8]) -> serde_json::Result<Self> {
+        body(bytes).map(Self::from_file)
+    }
 }
 
 pub enum Store<T> {
@@ -46,22 +54,58 @@ struct Versioned<F> {
 
 #[derive(Serialize, Deserialize)]
 pub struct NotesFile {
+    device: DeviceId,
     active: Option<String>,
     loose: Vec<NoteEntry>,
     sections: Vec<SectionEntry>,
+    removed: RemovedIds,
 }
 
 #[derive(Serialize, Deserialize)]
 struct NoteEntry {
+    id: NoteId,
+    text: String,
+    done: bool,
+    rank: Rank,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    section: Option<SectionId>,
+    done_stamp: Stamp,
+    place_stamp: Stamp,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SectionEntry {
+    id: SectionId,
+    name: String,
+    name_stamp: Stamp,
+    created: Stamp,
+    notes: Vec<NoteEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct RemovedIds {
+    notes: Vec<NoteId>,
+    sections: Vec<SectionId>,
+}
+
+#[derive(Deserialize)]
+struct V1Notes {
+    active: Option<String>,
+    loose: Vec<V1Note>,
+    sections: Vec<V1Section>,
+}
+
+#[derive(Deserialize)]
+struct V1Note {
     text: String,
     #[serde(default)]
     done: bool,
 }
 
-#[derive(Serialize, Deserialize)]
-struct SectionEntry {
+#[derive(Deserialize)]
+struct V1Section {
     name: String,
-    notes: Vec<NoteEntry>,
+    notes: Vec<V1Note>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -136,7 +180,17 @@ pub fn open<T: Document>(dir: &Path) -> (T, Store<T>) {
     }
     let path = dir.join(T::FILE_NAME);
     match load(&path) {
-        Ok(document) => (document, Store::File(Writer::spawn(path))),
+        Ok((document, version)) if version < T::VERSION => match keep_older(&path, version) {
+            Ok(_) => (document, Store::File(Writer::spawn(path))),
+            Err(error) => {
+                eprintln!(
+                    "bronze: cannot copy {} before upgrading it ({error}); it stays as it is and its contents stay in memory",
+                    path.display()
+                );
+                (document, Store::Memory)
+            }
+        },
+        Ok((document, _)) => (document, Store::File(Writer::spawn(path))),
         Err(why) => match set_aside(&path) {
             Ok(aside) => {
                 eprintln!("bronze: {} was unreadable ({why}); moved it to {}", path.display(), aside.display());
@@ -233,18 +287,29 @@ fn write<T: Document>(path: &Path, document: &T) {
     }
 }
 
-fn load<T: Document>(path: &Path) -> Result<T, Unreadable> {
+fn load<T: Document>(path: &Path) -> Result<(T, u32), Unreadable> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(T::default()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok((T::default(), T::VERSION)),
         Err(error) => return Err(Unreadable::Io(error)),
     };
     let header: Header = serde_json::from_slice(&bytes).map_err(Unreadable::Malformed)?;
-    if header.version > T::VERSION {
-        return Err(Unreadable::Newer(header.version));
-    }
-    let file: Versioned<T::File> = serde_json::from_slice(&bytes).map_err(Unreadable::Malformed)?;
-    Ok(T::from_file(file.body))
+    let document = match header.version.cmp(&T::VERSION) {
+        Ordering::Greater => return Err(Unreadable::Newer(header.version)),
+        Ordering::Equal => body(&bytes).map(T::from_file),
+        Ordering::Less => T::from_older(&bytes),
+    };
+    Ok((document.map_err(Unreadable::Malformed)?, header.version))
+}
+
+fn body<F: DeserializeOwned>(bytes: &[u8]) -> serde_json::Result<F> {
+    serde_json::from_slice::<Versioned<F>>(bytes).map(|file| file.body)
+}
+
+fn keep_older(path: &Path, version: u32) -> io::Result<PathBuf> {
+    let kept = path.with_extension(format!("v{version}.json"));
+    fs::copy(path, &kept)?;
+    Ok(kept)
 }
 
 fn set_aside(path: &Path) -> io::Result<PathBuf> {
@@ -264,36 +329,116 @@ impl std::fmt::Display for Unreadable {
     }
 }
 
-impl From<&Note> for NoteEntry {
-    fn from(note: &Note) -> NoteEntry {
-        NoteEntry { text: note.text.clone(), done: note.done }
-    }
-}
-
 impl Document for Board {
     const FILE_NAME: &'static str = "notes.json";
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
     type File = NotesFile;
 
     fn to_file(&self) -> NotesFile {
+        let replica = self.replica();
+        let mut sections: Vec<SectionEntry> = replica
+            .sections
+            .iter()
+            .filter_map(|(&id, record)| match record {
+                SectionRecord::Live { name, created } => Some(SectionEntry {
+                    id,
+                    name: name.value.clone(),
+                    name_stamp: name.at,
+                    created: *created,
+                    notes: Vec::new(),
+                }),
+                SectionRecord::Removed => None,
+            })
+            .collect();
+        sections.sort_unstable_by_key(|s| (s.created, s.id));
+        let nested: HashMap<SectionId, usize> = sections.iter().enumerate().map(|(at, s)| (s.id, at)).collect();
+        let mut notes: Vec<NoteEntry> = replica
+            .notes
+            .iter()
+            .filter_map(|(&id, record)| match record {
+                NoteRecord::Live { text, done, place } => Some(NoteEntry {
+                    id,
+                    text: text.clone(),
+                    done: done.value,
+                    rank: place.value.rank.clone(),
+                    section: place.value.section,
+                    done_stamp: done.at,
+                    place_stamp: place.at,
+                }),
+                NoteRecord::Removed => None,
+            })
+            .collect();
+        notes.sort_unstable_by(|a, b| (&a.rank, a.id).cmp(&(&b.rank, b.id)));
+        let mut loose = Vec::new();
+        for mut note in notes {
+            match note.section.and_then(|id| nested.get(&id)) {
+                Some(&at) => {
+                    note.section = None;
+                    sections[at].notes.push(note);
+                }
+                None => loose.push(note),
+            }
+        }
         NotesFile {
+            device: self.device(),
             active: self.active().map(|s| s.name.clone()),
-            loose: self.loose().iter().map(NoteEntry::from).collect(),
-            sections: self
-                .sections()
-                .iter()
-                .map(|s| SectionEntry { name: s.name.clone(), notes: s.notes.iter().map(NoteEntry::from).collect() })
-                .collect(),
+            loose,
+            sections,
+            removed: RemovedIds {
+                notes: replica
+                    .notes
+                    .iter()
+                    .filter(|(_, r)| matches!(r, NoteRecord::Removed))
+                    .map(|(&id, _)| id)
+                    .collect(),
+                sections: replica
+                    .sections
+                    .iter()
+                    .filter(|(_, r)| matches!(r, SectionRecord::Removed))
+                    .map(|(&id, _)| id)
+                    .collect(),
+            },
         }
     }
 
     fn from_file(file: NotesFile) -> Board {
-        let notes = |entries: Vec<NoteEntry>| entries.into_iter().map(|n| (n.text, n.done)).collect();
-        Board::restore(Restored {
+        let mut replica = Replica::default();
+        for note in file.loose {
+            replica.notes.insert(note.id, note.into_record(None));
+        }
+        for section in file.sections {
+            for note in section.notes {
+                replica.notes.insert(note.id, note.into_record(Some(section.id)));
+            }
+            let name = Reg { value: section.name, at: section.name_stamp };
+            replica.sections.insert(section.id, SectionRecord::Live { name, created: section.created });
+        }
+        replica.notes.extend(file.removed.notes.into_iter().map(|id| (id, NoteRecord::Removed)));
+        replica.sections.extend(file.removed.sections.into_iter().map(|id| (id, SectionRecord::Removed)));
+        Board::load(file.device, &replica, file.active.as_deref())
+    }
+
+    fn from_older(bytes: &[u8]) -> serde_json::Result<Board> {
+        let file: V1Notes = body(bytes)?;
+        let notes = |entries: Vec<V1Note>| entries.into_iter().map(|n| (n.text, n.done)).collect();
+        Ok(Board::restore(Restored {
             loose: notes(file.loose),
             sections: file.sections.into_iter().map(|s| (s.name, notes(s.notes))).collect(),
             active: file.active,
-        })
+        }))
+    }
+}
+
+impl NoteEntry {
+    fn into_record(self, nested_in: Option<SectionId>) -> NoteRecord {
+        NoteRecord::Live {
+            text: self.text,
+            done: Reg { value: self.done, at: self.done_stamp },
+            place: Reg {
+                value: Position { section: self.section.or(nested_in), rank: self.rank },
+                at: self.place_stamp,
+            },
+        }
     }
 }
 

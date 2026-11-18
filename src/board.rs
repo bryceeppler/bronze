@@ -147,6 +147,7 @@ impl Board {
         self.view != before
     }
 
+    #[cfg(test)]
     pub fn loose(&self) -> &[Note] {
         &self.view.loose
     }

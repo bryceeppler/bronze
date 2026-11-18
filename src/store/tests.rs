@@ -40,7 +40,7 @@ fn a_saved_board_reloads_identically() {
 
 #[test]
 fn an_unreadable_or_newer_file_is_moved_aside_not_overwritten() {
-    for contents in ["{ not json", r#"{"version": 2, "loose": [], "sections": [], "notes": "future"}"#] {
+    for contents in ["{ not json", r#"{"version": 3, "loose": [], "sections": [], "notes": "future"}"#] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("notes.json");
         fs::write(&path, contents).unwrap();
@@ -70,10 +70,96 @@ fn the_file_is_pretty_versioned_json() {
     store.flush();
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(dir.path().join("notes.json")).unwrap()).unwrap();
-    assert_eq!(json["version"], 1);
+    assert_eq!(json["version"], 2);
     assert_eq!(json["active"], "Research");
-    assert_eq!(json["loose"][0], serde_json::json!({"text": "loose one", "done": true}));
+    let note = &json["loose"][0];
+    let mut fields: Vec<&str> = note.as_object().unwrap().keys().map(String::as_str).collect();
+    fields.sort_unstable();
+    assert_eq!(fields, ["done", "done_stamp", "id", "place_stamp", "rank", "text"]);
+    assert_eq!((&note["text"], &note["done"]), (&serde_json::json!("loose one"), &serde_json::json!(true)));
     assert_eq!(json["sections"][1]["name"], "Errands");
+    assert!(json["device"].as_str().is_some_and(|d| d.len() == 16));
+    assert_eq!(json["removed"], serde_json::json!({"notes": [], "sections": []}));
+}
+
+const WRITTEN_BY_MAIN: &str = include_str!("fixtures/v1-notes.json");
+
+fn notes(list: &[(&str, bool)]) -> Vec<(String, bool)> {
+    list.iter().map(|&(text, done)| (text.to_owned(), done)).collect()
+}
+
+#[test]
+fn a_version_1_file_written_by_main_opens_with_the_same_outline_and_is_kept_beside_it() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("notes.json"), WRITTEN_BY_MAIN).unwrap();
+
+    let (board, store) = open::<Board>(dir.path());
+    let expected = vec![
+        (None, notes(&[("Loose thought", true), ("Second loose note\nwith a second line", false)])),
+        (
+            Some("Research".to_owned()),
+            notes(&[
+                ("Read the **paper**", false),
+                ("Check whether `retry_after` is seconds", true),
+                ("  let cache = Lru::new(64);\n", false),
+            ]),
+        ),
+        (Some("Errands".to_owned()), notes(&[("Buy oat milk", false)])),
+    ];
+    assert_eq!(outline(&board), (expected, Some("Research".to_owned())));
+    assert_eq!(fs::read_to_string(dir.path().join("notes.v1.json")).unwrap(), WRITTEN_BY_MAIN);
+
+    store.save(&board);
+    store.flush();
+    let (reloaded, _) = open::<Board>(dir.path());
+    assert_eq!(outline(&reloaded), outline(&board));
+    assert_eq!(reloaded.replica(), board.replica());
+    assert_eq!(fs::read_to_string(dir.path().join("notes.v1.json")).unwrap(), WRITTEN_BY_MAIN);
+}
+
+#[test]
+fn a_version_1_file_that_cannot_be_copied_is_never_overwritten() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("notes.json"), WRITTEN_BY_MAIN).unwrap();
+    fs::create_dir(dir.path().join("notes.v1.json")).unwrap();
+
+    let (board, store) = open::<Board>(dir.path());
+    assert_eq!(board.notes().count(), 6);
+    store.save(&sample());
+    store.flush();
+    assert_eq!(fs::read_to_string(dir.path().join("notes.json")).unwrap(), WRITTEN_BY_MAIN);
+}
+
+#[test]
+fn version_2_keeps_ids_stamps_removals_and_notes_left_in_removed_sections() {
+    let (mut mac, mut linux) = (Board::seeded(1), Board::seeded(2));
+    mac.submit("removed later");
+    mac.submit("# Drafts");
+    mac.submit("in drafts");
+    linux.submit("# drafts");
+    linux.submit("in the other drafts");
+    linux.submit("# Gone");
+    mac.join(linux.replica());
+    let gone = mac.sections().iter().find(|s| s.name == "Gone").map(|s| s.id).unwrap();
+    mac.remove_section(gone);
+    linux.submit("left in gone");
+    mac.join(linux.replica());
+    let removed: Vec<_> = mac.notes().filter(|n| n.text == "removed later").map(|n| n.id).collect();
+    mac.remove(&removed);
+    let drafts = mac.sections()[0].id;
+    mac.toggle(&[mac.sections()[0].notes[0].id]);
+    mac.activate(drafts);
+
+    let dir = tempfile::tempdir().unwrap();
+    let (_, store) = open::<Board>(dir.path());
+    store.save(&mac);
+    store.flush();
+    let (reloaded, _) = open::<Board>(dir.path());
+
+    assert_eq!(reloaded.replica(), mac.replica());
+    assert_eq!(reloaded.device(), mac.device());
+    assert_eq!(outline(&reloaded), outline(&mac));
+    assert!(reloaded.loose().iter().any(|n| n.text == "left in gone"));
 }
 
 #[test]
