@@ -118,8 +118,8 @@ pub fn cheat_sheet() -> Vec<(String, &'static str)> {
 
 pub fn anywhere() -> Vec<(String, &'static str)> {
     let gestures = match KeyPlatform::current() {
-        KeyPlatform::Mac => Global::ALL.as_slice(),
-        KeyPlatform::Windows | KeyPlatform::Linux => &[],
+        KeyPlatform::Mac | KeyPlatform::Windows => Global::ALL.as_slice(),
+        KeyPlatform::Linux => &[],
     };
     gestures
         .iter()
