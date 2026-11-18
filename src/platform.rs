@@ -71,7 +71,7 @@ fn selected_text() -> Option<String> {
     arboard::Clipboard::new().ok()?.get().clipboard(LinuxClipboardKind::Primary).text().ok()
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn selected_text() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
 }
