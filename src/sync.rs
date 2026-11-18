@@ -25,7 +25,7 @@ use file::SyncFile;
 
 use crate::board::Replica;
 
-pub struct Sync {
+pub struct Syncing {
     file: Option<SyncFile>,
     running: Option<Running>,
 }
@@ -37,13 +37,13 @@ struct Running {
     status: Status,
 }
 
-impl Sync {
-    pub fn unsaved() -> Sync {
-        Sync { file: None, running: None }
+impl Syncing {
+    pub fn unsaved() -> Syncing {
+        Syncing { file: None, running: None }
     }
 
-    pub fn saved_in(folder: &Path) -> Sync {
-        Sync { file: Some(SyncFile::in_folder(folder)), running: None }
+    pub fn saved_in(folder: &Path) -> Syncing {
+        Syncing { file: Some(SyncFile::in_folder(folder)), running: None }
     }
 
     pub fn resume(&mut self, local: &Replica, wake: impl Fn() + Send + 'static) {

@@ -15,7 +15,7 @@ const PATIENCE: Duration = Duration::from_secs(30);
 
 struct Machine {
     board: Board,
-    sync: Sync,
+    sync: Syncing,
     _folder: tempfile::TempDir,
 }
 
@@ -32,7 +32,7 @@ impl Machine {
             board.submit(line);
         }
         let folder = tempfile::tempdir().unwrap();
-        Machine { board, sync: Sync::saved_in(folder.path()), _folder: folder }
+        Machine { board, sync: Syncing::saved_in(folder.path()), _folder: folder }
     }
 
     fn edit<R>(&mut self, change: impl FnOnce(&mut Board) -> R) -> R {

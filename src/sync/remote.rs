@@ -57,17 +57,17 @@ impl Remote {
             ),
             None => (request, EXCHANGE),
         };
-        let mut response = request.config().timeout_global(Some(timeout)).build().call().map_err(unreachable)?;
+        let mut response = request.config().timeout_global(Some(timeout)).build().call().map_err(offline)?;
         match response.status().as_u16() {
             200 => {
                 let version = version(response.headers()).ok_or(Failure::Offline(Offline::Unexpected(200)))?;
                 let sealed =
-                    response.body_mut().with_config().limit(MAX_SNAPSHOT_BYTES).read_to_vec().map_err(unreachable)?;
+                    response.body_mut().with_config().limit(MAX_SNAPSHOT_BYTES).read_to_vec().map_err(offline)?;
                 Ok(Pulled::Snapshot(version, sealed))
             }
             304 => Ok(Pulled::Unchanged),
             404 => Ok(Pulled::Missing),
-            status => Err(refused(status, response.body_mut())),
+            status => Err(failure(status, response.body_mut())),
         }
     }
 
@@ -83,12 +83,12 @@ impl Remote {
             .timeout_global(Some(EXCHANGE))
             .build()
             .send(sealed)
-            .map_err(unreachable)?;
+            .map_err(offline)?;
         match (response.status().as_u16(), version(response.headers())) {
             (200..=299, Some(version)) => Ok(Pushed::Written(version)),
             (412, Some(_)) => Ok(Pushed::Stale),
             (412 | 404, _) => Ok(Pushed::Missing),
-            (status, _) => Err(refused(status, response.body_mut())),
+            (status, _) => Err(failure(status, response.body_mut())),
         }
     }
 }
@@ -97,7 +97,7 @@ fn version(headers: &HeaderMap) -> Option<Version> {
     Version::from_etag(headers.get(header::ETAG)?.to_str().ok()?).ok()
 }
 
-fn refused(status: u16, body: &mut ureq::Body) -> Failure {
+fn failure(status: u16, body: &mut ureq::Body) -> Failure {
     match status {
         401 => Failure::Refused(Refusal::WrongKey),
         403 => {
@@ -110,7 +110,7 @@ fn refused(status: u16, body: &mut ureq::Body) -> Failure {
     }
 }
 
-fn unreachable(error: ureq::Error) -> Failure {
+fn offline(error: ureq::Error) -> Failure {
     Failure::Offline(Offline::Unreachable(error.to_string()))
 }
 

@@ -19,7 +19,6 @@ pub enum Event {
     Stop,
 }
 
-#[derive(Debug)]
 pub enum Delivery {
     Remote(Replica),
     Status(Status),

@@ -15,7 +15,7 @@ use crate::platform::{Access, Fake};
 use crate::prefs::Prefs;
 use crate::store::{self, Store};
 use crate::sync::test_server::TestServer;
-use crate::sync::{Setup, Status, Sync};
+use crate::sync::{Setup, Status, Syncing};
 
 struct Panel {
     rt: Runtime<App>,
@@ -34,7 +34,7 @@ impl Panel {
             notes: Store::Memory,
             prefs: Prefs::default(),
             preferences: Store::Memory,
-            sync: Sync::unsaved(),
+            sync: Syncing::unsaved(),
         }
     }
 
@@ -289,7 +289,7 @@ fn the_switcher_scrolls_to_keep_the_picked_section_in_the_window() {
         notes: Store::Memory,
         prefs: Prefs::default(),
         preferences: Store::Memory,
-        sync: Sync::unsaved(),
+        sync: Syncing::unsaved(),
     });
     p.command('k');
     for _ in 0..25 {
@@ -434,7 +434,7 @@ fn keep_on_top_and_the_list_view_survive_a_restart() {
         let (board, notes) = store::open::<Board>(dir.path());
         let (prefs, preferences) = store::open::<Prefs>(dir.path());
         (
-            Saved { board, notes: notes.clone(), prefs, preferences: preferences.clone(), sync: Sync::unsaved() },
+            Saved { board, notes: notes.clone(), prefs, preferences: preferences.clone(), sync: Syncing::unsaved() },
             notes,
             preferences,
         )
@@ -461,8 +461,13 @@ fn keep_on_top_and_the_list_view_survive_a_restart() {
 fn reveal_notes_file_asks_the_system_to_show_the_notes_file() {
     let dir = tempfile::tempdir().unwrap();
     let (board, notes) = store::open::<Board>(dir.path());
-    let mut p =
-        Panel::with(Saved { board, notes, prefs: Prefs::default(), preferences: Store::Memory, sync: Sync::unsaved() });
+    let mut p = Panel::with(Saved {
+        board,
+        notes,
+        prefs: Prefs::default(),
+        preferences: Store::Memory,
+        sync: Syncing::unsaved(),
+    });
     p.click(p.at("more"), PLAIN);
     p.click(p.menu_item("Reveal Notes File"), PLAIN);
     assert_eq!(p.platform.revealed(), [dir.path().join("notes.json")]);
@@ -501,7 +506,7 @@ fn on_folder(dir: &Path) -> (Panel, Store<Board>) {
         notes: notes.clone(),
         prefs: Prefs::default(),
         preferences: Store::Memory,
-        sync: Sync::saved_in(dir),
+        sync: Syncing::saved_in(dir),
     };
     (Panel::with(saved), notes)
 }

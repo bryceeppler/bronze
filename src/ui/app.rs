@@ -11,7 +11,7 @@ use crate::board::{Board, Note, NoteId, Owner, Place, Scope, SectionId, Submitte
 use crate::platform::{Access, Platform};
 use crate::prefs::Prefs;
 use crate::store::Store;
-use crate::sync::{Delivery, Setup, Status, Sync, SyncCode};
+use crate::sync::{Delivery, Setup, Status, SyncCode, Syncing};
 
 const NOTICE_SECONDS: f64 = 2.5;
 const ACCESS_RECHECK_SECONDS: f64 = 1.0;
@@ -19,7 +19,7 @@ const ACCESS_RECHECK_SECONDS: f64 = 1.0;
 pub struct App {
     board: Board,
     notes: Store<Board>,
-    sync: Sync,
+    sync: Syncing,
     prefs: Prefs,
     preferences: Store<Prefs>,
     platform: Rc<dyn Platform>,
@@ -43,7 +43,7 @@ pub struct Saved {
     pub notes: Store<Board>,
     pub prefs: Prefs,
     pub preferences: Store<Prefs>,
-    pub sync: Sync,
+    pub sync: Syncing,
 }
 
 pub enum Notice<'a> {
