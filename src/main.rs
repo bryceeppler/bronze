@@ -3,6 +3,7 @@ mod inline;
 mod platform;
 mod prefs;
 mod store;
+mod taps;
 mod ui;
 
 use std::path::{Path, PathBuf};
