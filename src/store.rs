@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests;
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -221,8 +222,11 @@ fn write<T: Document>(path: &Path, document: &T) {
     let versioned = Versioned { version: T::VERSION, body: document.to_file() };
     let json = serde_json::to_string_pretty(&versioned).expect("documents serialize");
     let temp = path.with_extension("json.tmp");
-    let written = fs::write(&temp, json + "\n")
-        .and_then(|()| fs::File::open(&temp)?.sync_all())
+    let written = fs::File::create(&temp)
+        .and_then(|mut file| {
+            file.write_all((json + "\n").as_bytes())?;
+            file.sync_all()
+        })
         .and_then(|()| fs::rename(&temp, path));
     if let Err(error) = written {
         eprintln!("bronze: cannot save {}: {error}", path.display());
