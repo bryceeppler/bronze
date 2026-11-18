@@ -486,7 +486,8 @@ impl Notice<'_> {
         match self {
             Notice::NothingSelected => "Nothing is selected to capture".to_owned(),
             Notice::NeedsAccess => {
-                "Bronze needs Accessibility access to capture selected text and to hear double-tap Shift.".to_owned()
+                "Bronze needs Accessibility access to capture selected text and to respond to double-tap Shift."
+                    .to_owned()
             }
             Notice::Unavailable(global, error) => {
                 let (name, chord) = (global.name(), commands::label(global.chord()));

@@ -239,13 +239,13 @@ impl<F: Fn(Gesture)> Listener<F> {
         tap.invalidate();
     }
 
-    fn hear(&self, kind: CGEventType, event: &CGEvent) {
-        if matches!(kind, CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput) {
-            if let Some(tap) = &*self.tap.borrow() {
-                CGEvent::tap_enable(tap, true);
-            }
-            return;
+    fn revive(&self) {
+        if let Some(tap) = &*self.tap.borrow() {
+            CGEvent::tap_enable(tap, true);
         }
+    }
+
+    fn hear(&self, kind: CGEventType, event: &CGEvent) {
         let gesture = self.detector.borrow_mut().feed(input(kind, event), self.started.elapsed());
         if let Some(gesture) = gesture {
             (self.on_gesture)(gesture);
@@ -292,7 +292,10 @@ unsafe extern "C-unwind" fn on_event<F: Fn(Gesture)>(
     listener: *mut c_void,
 ) -> *mut CGEvent {
     let listener = unsafe { &*listener.cast::<Listener<F>>() };
-    listener.hear(kind, unsafe { event.as_ref() });
+    match kind {
+        CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput => listener.revive(),
+        _ => listener.hear(kind, unsafe { event.as_ref() }),
+    }
     event.as_ptr()
 }
 
