@@ -1,14 +1,19 @@
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use bronze_wire::{Precondition, Version, prefer_wait, vault_path};
 
+use super::address::ServerAddress;
+use super::engine::{Engine, Event, Halt};
 use super::remote::{Pulled, Pushed, Remote};
 use super::seal::Seal;
 use super::status::{Offline, Refusal};
 use super::test_server::TestServer;
 use super::*;
-use crate::board::{Board, NoteId, Place, Scope};
+use crate::board::{Board, NoteId, Place, Replica, Scope};
 
 const LIVE: Duration = Duration::from_secs(2);
 const PATIENCE: Duration = Duration::from_secs(30);
@@ -313,4 +318,156 @@ fn unopenable_copy_is_kept(sealed: &[u8], refusal: Refusal) {
     desk.join(&mut fresh, &code);
     let outline = desk.converge(&mut [&mut a, &mut fresh]);
     assert_eq!(outline.len(), 3, "the edit made while refused reached the server: {outline:?}");
+}
+
+const GUARD: Duration = Duration::from_secs(10);
+
+struct Wire {
+    address: ServerAddress,
+    heard: Receiver<Heard>,
+    open: usize,
+}
+
+enum Heard {
+    Opened,
+    Request(String, Sender<Vec<u8>>),
+    Closed,
+}
+
+impl Wire {
+    fn listen() -> Wire {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = ServerAddress::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let (tell, heard) = mpsc::channel();
+        thread::spawn(move || {
+            for stream in listener.incoming().map_while(Result::ok) {
+                if tell.send(Heard::Opened).is_err() {
+                    return;
+                }
+                let tell = tell.clone();
+                thread::spawn(move || hold(stream, &tell));
+            }
+        });
+        Wire { address, heard, open: 0 }
+    }
+
+    fn hear(&mut self) -> Heard {
+        let heard = self.heard.recv_timeout(GUARD).expect("the client opened, asked or closed something");
+        match heard {
+            Heard::Opened => self.open += 1,
+            Heard::Closed => self.open -= 1,
+            Heard::Request(..) => {}
+        }
+        heard
+    }
+
+    fn request(&mut self) -> (String, Sender<Vec<u8>>) {
+        loop {
+            if let Heard::Request(head, answer) = self.hear() {
+                return (head, answer);
+            }
+        }
+    }
+
+    fn closes_with_no_other_request(&mut self) {
+        while self.open > 0 {
+            if let Heard::Request(head, _) = self.hear() {
+                panic!("a request started after stop: {}", head.lines().next().unwrap_or_default());
+            }
+        }
+    }
+}
+
+fn hold(stream: TcpStream, tell: &Sender<Heard>) {
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut writer = stream;
+    loop {
+        let mut head = String::new();
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                _ = tell.send(Heard::Closed);
+                return;
+            }
+            if line == "\r\n" {
+                break;
+            }
+            head.push_str(&line);
+        }
+        let length = head
+            .lines()
+            .find_map(|line| line.to_ascii_lowercase().strip_prefix("content-length:").map(|n| n.trim().to_owned()))
+            .map_or(0, |n| n.parse().unwrap_or(0));
+        let mut body = vec![0; length];
+        if reader.read_exact(&mut body).is_err() {
+            _ = tell.send(Heard::Closed);
+            return;
+        }
+        let (answer, answered) = mpsc::channel();
+        _ = tell.send(Heard::Request(head, answer));
+        match answered.recv() {
+            Ok(bytes) if writer.write_all(&bytes).is_ok() => {}
+            _ => {
+                _ = tell.send(Heard::Closed);
+                return;
+            }
+        }
+    }
+}
+
+fn answer(status: &str, version: Option<Version>, body: &[u8]) -> Vec<u8> {
+    let etag = version.map(|version| format!("etag: {}\r\n", version.etag())).unwrap_or_default();
+    let head = format!("HTTP/1.1 {status}\r\n{etag}content-length: {}\r\n\r\n", body.len());
+    [head.as_bytes(), body].concat()
+}
+
+#[test]
+fn a_stop_before_the_first_request_means_no_request_is_ever_made() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let server = ServerAddress::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+    let (events, inbox) = mpsc::channel();
+    let halt = Halt::default();
+    let engine = Engine::new(&Setup::Start(server).code(), Replica::default(), events.clone(), halt.clone(), |_| {});
+    halt.halt();
+    events.send(Event::Stop).unwrap();
+    let (done, finished) = mpsc::channel();
+    thread::spawn(move || {
+        engine.run(&inbox);
+        _ = done.send(());
+    });
+    let finished = finished.recv_timeout(GUARD).is_ok();
+    listener.set_nonblocking(true).unwrap();
+    let connected = listener.accept().is_ok();
+    assert!(finished && !connected, "stopped before it ran, the engine finished: {finished}, connected: {connected}");
+}
+
+#[test]
+fn a_stop_while_the_first_get_is_held_lets_no_put_follow() {
+    let mut wire = Wire::listen();
+    let folder = tempfile::tempdir().unwrap();
+    let mut syncing = Syncing::saved_in(folder.path());
+    syncing.start(Setup::Start(wire.address.clone()).code(), &Replica::default(), || {}).unwrap();
+    let (get, held) = wire.request();
+    assert!(get.starts_with("GET "), "{get}");
+    syncing.stop().unwrap();
+    held.send(answer("404 Not Found", None, b"")).unwrap();
+    wire.closes_with_no_other_request();
+}
+
+#[test]
+fn a_stop_while_synced_lets_the_long_poll_answer_and_starts_no_other() {
+    let mut wire = Wire::listen();
+    let folder = tempfile::tempdir().unwrap();
+    let mut syncing = Syncing::saved_in(folder.path());
+    let code = Setup::Start(wire.address.clone()).code();
+    syncing.start(code.clone(), &Replica::default(), || {}).unwrap();
+    let (_, held) = wire.request();
+    let (_, seal) = vault(&code);
+    let version = Version::from_bytes([7; 16]);
+    held.send(answer("200 OK", Some(version), &seal.seal(&Replica::default()))).unwrap();
+    let (watch, held) = wire.request();
+    assert!(watch.to_ascii_lowercase().contains("if-none-match"), "{watch}");
+    syncing.stop().unwrap();
+    held.send(answer("304 Not Modified", Some(version), b"")).unwrap();
+    wire.closes_with_no_other_request();
 }

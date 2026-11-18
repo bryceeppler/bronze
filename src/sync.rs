@@ -20,7 +20,7 @@ pub use code::{Setup, SyncCode};
 pub use engine::Delivery;
 pub use status::Status;
 
-use engine::{Engine, Event};
+use engine::{Engine, Event, Halt};
 use file::SyncFile;
 
 use crate::board::Replica;
@@ -32,6 +32,7 @@ pub struct Syncing {
 
 struct Running {
     code: SyncCode,
+    halt: Halt,
     events: Sender<Event>,
     deliveries: Receiver<Delivery>,
     status: Status,
@@ -100,7 +101,9 @@ impl Running {
     fn start(code: SyncCode, local: &Replica, wake: impl Fn() + Send + 'static) -> Running {
         let (events, inbox) = mpsc::channel();
         let (deliver, deliveries) = mpsc::channel();
-        let (engine_code, local, engine_events) = (code.clone(), local.clone(), events.clone());
+        let halt = Halt::default();
+        let (engine_code, local, engine_events, engine_halt) =
+            (code.clone(), local.clone(), events.clone(), halt.clone());
         thread::Builder::new()
             .name("bronze-sync".into())
             .spawn(move || {
@@ -109,15 +112,16 @@ impl Running {
                         wake();
                     }
                 };
-                Engine::new(&engine_code, local, engine_events, deliver).run(&inbox);
+                Engine::new(&engine_code, local, engine_events, engine_halt, deliver).run(&inbox);
             })
             .expect("spawn the sync thread");
-        Running { code, events, deliveries, status: Status::Connecting }
+        Running { code, halt, events, deliveries, status: Status::Connecting }
     }
 }
 
 impl Drop for Running {
     fn drop(&mut self) {
+        self.halt.halt();
         _ = self.events.send(Event::Stop);
     }
 }

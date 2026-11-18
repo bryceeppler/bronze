@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -24,11 +26,25 @@ pub enum Delivery {
     Status(Status),
 }
 
+#[derive(Clone, Default)]
+pub struct Halt(Arc<AtomicBool>);
+
+#[derive(Clone)]
+struct Line {
+    remote: Remote,
+    halt: Halt,
+}
+
 enum Server {
     Unknown,
     Missing,
     At(Version, Replica),
     Unopenable(Version, Unopenable),
+}
+
+enum Request {
+    Pull,
+    Push(Precondition),
 }
 
 enum Exchange {
@@ -37,7 +53,7 @@ enum Exchange {
 }
 
 pub struct Engine {
-    remote: Remote,
+    line: Line,
     seal: Seal,
     local: Replica,
     server: Server,
@@ -54,11 +70,12 @@ impl Engine {
         code: &SyncCode,
         local: Replica,
         events: Sender<Event>,
+        halt: Halt,
         deliver: impl Fn(Delivery) + Send + 'static,
     ) -> Engine {
         let derived = code.key.derive();
         Engine {
-            remote: Remote::new(&code.server, &derived.vault, &derived.token),
+            line: Line { remote: Remote::new(&code.server, &derived.vault, &derived.token), halt },
             seal: Seal::new(&derived.vault, &derived.cipher),
             local,
             server: Server::Unknown,
@@ -113,22 +130,24 @@ impl Engine {
 
     fn reconcile(&mut self) {
         loop {
-            let exchanged = match &self.server {
-                Server::Unknown => self.remote.pull(None).map(Exchange::Pulled),
-                Server::Missing => {
-                    self.remote.push(Precondition::Create, &self.seal.seal(&self.local)).map(Exchange::Pushed)
-                }
-                Server::At(version, remote) if *remote != self.local => self
-                    .remote
-                    .push(Precondition::Replace(*version), &self.seal.seal(&self.local))
-                    .map(Exchange::Pushed),
+            let request = match &self.server {
+                Server::Unknown => Request::Pull,
+                Server::Missing => Request::Push(Precondition::Create),
+                Server::At(version, known) if *known != self.local => Request::Push(Precondition::Replace(*version)),
                 Server::At(..) => return self.settle(Status::Synced),
                 Server::Unopenable(_, why) => return self.settle(Status::Refused((*why).into())),
             };
+            let exchanged = self.line.exchange(|remote| match request {
+                Request::Pull => remote.pull(None).map(Exchange::Pulled),
+                Request::Push(precondition) => {
+                    remote.push(precondition, &self.seal.seal(&self.local)).map(Exchange::Pushed)
+                }
+            });
             match exchanged {
-                Ok(Exchange::Pulled(pulled)) => self.pulled(pulled),
-                Ok(Exchange::Pushed(pushed)) => self.pushed(pushed),
-                Err(failure) => return self.failed(failure),
+                Some(Ok(Exchange::Pulled(pulled))) => self.pulled(pulled),
+                Some(Ok(Exchange::Pushed(pushed))) => self.pushed(pushed),
+                Some(Err(failure)) => return self.failed(failure),
+                None => return,
             }
         }
     }
@@ -175,10 +194,14 @@ impl Engine {
             return;
         }
         self.watching = true;
-        let (remote, events) = (self.remote.clone(), self.events.clone());
+        let (line, events) = (self.line.clone(), self.events.clone());
         thread::Builder::new()
             .name("bronze-sync-watch".into())
-            .spawn(move || _ = events.send(Event::Pulled(remote.pull(Some(seen)))))
+            .spawn(move || {
+                if let Some(pulled) = line.exchange(|remote| remote.pull(Some(seen))) {
+                    _ = events.send(Event::Pulled(pulled));
+                }
+            })
             .expect("spawn the sync watcher");
     }
 
@@ -195,6 +218,26 @@ impl Engine {
             self.status = status.clone();
             (self.deliver)(Delivery::Status(status));
         }
+    }
+}
+
+impl Halt {
+    pub fn halt(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    fn halted(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+impl Line {
+    fn exchange<T>(&self, request: impl FnOnce(&Remote) -> T) -> Option<T> {
+        if self.halt.halted() {
+            return None;
+        }
+        let answer = request(&self.remote);
+        (!self.halt.halted()).then_some(answer)
     }
 }
 
