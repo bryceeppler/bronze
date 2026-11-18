@@ -1,8 +1,8 @@
 use rune::tok::type_;
-use rune::{Cursor, El, Shadow, Tx, auto_grow, el, icon, row, text, text_input};
+use rune::{Cursor, El, Shadow, Tx, auto_grow, col, el, icon, row, text, text_input};
 use rune_kit::{Kit, Menu, MenuItem, Placement};
 
-use super::app::{App, Overlay};
+use super::app::{App, Notice, Overlay};
 use super::commands;
 use super::icons;
 use super::look::Look;
@@ -110,20 +110,33 @@ fn target_item(label: &str, target: Option<SectionId>, current: Option<SectionId
 
 pub fn notice(s: &App, look: &Look) -> Option<El> {
     let notice = s.notice()?;
-    Some(
-        row()
-            .key("notice")
-            .role("status")
-            .self_center()
-            .mt(8.0)
-            .h(26.0)
-            .px(12.0)
-            .center_y()
-            .radius(13.0)
-            .fill(look.raised)
-            .border(look.hair, look.card_border)
-            .child(text(notice).font(type_::LABEL).color(look.muted)),
-    )
+    let words = text(notice.text()).font(type_::LABEL).color(look.muted);
+    let frame = |el: El| el.key("notice").role("status").mt(8.0).fill(look.raised).border(look.hair, look.card_border);
+    Some(match notice {
+        Notice::NeedsAccess => {
+            frame(col()).w_full().radius(16.0).px(12.0).py(10.0).gap(8.0).child(words.wrap()).child(open_settings(look))
+        }
+        Notice::NothingSelected | Notice::Unavailable(..) => {
+            frame(row()).self_center().h(26.0).radius(13.0).px(12.0).center_y().child(words)
+        }
+    })
+}
+
+fn open_settings(look: &Look) -> El {
+    row()
+        .key("open-settings")
+        .role("button")
+        .label("Open Settings")
+        .self_start()
+        .h(26.0)
+        .px(12.0)
+        .center_y()
+        .radius(13.0)
+        .fill(look.field)
+        .border(look.hair, look.field_border)
+        .cursor(Cursor::Pointer)
+        .on_press(|s: &mut App| s.ask_for_access())
+        .child(text("Open Settings").font(type_::LABEL).color(look.text))
 }
 
 pub fn composer(s: &App, look: &Look) -> El {
