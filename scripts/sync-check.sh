@@ -4,7 +4,6 @@ cd "$(dirname "$0")/.."
 
 cargo build -q
 cargo build -q --release --locked --manifest-path server/Cargo.toml
-base=${XVFB_DISPLAY:-93}
 work=$(mktemp -d)
 pids=()
 server=
@@ -54,7 +53,7 @@ write_sync_json() {
   (umask 077 && printf '{ "version": 1, "server": "%s", "key": "%s" }\n' "$2" "$key" > "$1/sync.json")
 }
 
-declare -A display=([a]=":$base" [b]=":$((base + 1))") window=() app=()
+declare -A display=() window=() app=()
 launch() {
   local name=$1
   shift
@@ -83,11 +82,13 @@ holds() { grep -qF "$2" "$work/$1/notes.json" 2> /dev/null; }
 converged() { [ -n "$(outline a)" ] && [ "$(outline a)" = "$(outline b)" ] && [ "$(outline a | jq length)" = "$1" ]; }
 
 for name in a b; do
-  Xvfb "${display[$name]}" -screen 0 1280x800x24 -nolisten tcp > /dev/null 2>&1 &
+  Xvfb -displayfd 3 -screen 0 1280x800x24 -nolisten tcp 3> "$work/$name.display" > /dev/null 2>&1 &
   pids+=($!)
 done
 for name in a b; do
-  wait_for 5000 "DISPLAY=${display[$name]} xdpyinfo > /dev/null 2>&1" || fail "Xvfb ${display[$name]} did not start"
+  wait_for 5000 "[ -s '$work/$name.display' ]" || fail "Xvfb for $name did not start"
+  display[$name]=":$(head -1 "$work/$name.display")"
+  wait_for 5000 "DISPLAY=${display[$name]} xdpyinfo > /dev/null 2>&1" || fail "Xvfb ${display[$name]} does not answer"
 done
 
 mkdir -p "$work/a" "$work/b"
@@ -232,5 +233,107 @@ pass "sync off: with no sync.json bronze opened no AF_INET or AF_INET6 socket un
 traced a
 wait_for 5000 "grep -q 'connect(.*sin_port=htons($port)' '$work/a.strace'" || fail "sync on: no connection to the server under strace"
 pass "sync on: the same trace on a synced folder shows $(inet a) internet socket calls, connecting to 127.0.0.1:$port"
+
+quit a
+address="http://127.0.0.1:$port"
+cat > "$work/setup.json" << EOF
+{"events": [
+  {"t": 0.3, "type": "tap", "key": "more"},
+  {"t": 0.6, "type": "mark", "name": "menu"},
+  {"t": 0.7, "type": "tap", "key": "overflow-item2"},
+  {"t": 1.0, "type": "mark", "name": "sheet"},
+  {"t": 1.1, "type": "type", "text": "$address", "every": 0.01},
+  {"t": 1.6, "type": "key", "name": "Enter"},
+  {"t": 2.0, "type": "mark", "name": "code"}
+]}
+EOF
+for mark in menu sheet code; do
+  target/debug/bronze --data "$work/twin-$mark" --script "$work/setup.json" --at "mark:$mark" \
+    --tree "$work/twin-$mark.json" > "$work/twin-$mark.log" 2>&1 || fail "the headless twin did not reach $mark"
+done
+rect() {
+  jq -r --arg key "$2" '[.elements[] | select(.key == $key)][0].rect | select(. != null) | map(floor) | join(" ")' \
+    "$work/twin-$1.json"
+}
+read -r more_x more_y more_w more_h <<< "$(rect menu more)"
+read -r item_x item_y item_w item_h <<< "$(rect menu overflow-item2)"
+read -r field_x field_y field_w field_h <<< "$(rect sheet sync-field-box)"
+read -r copy_x copy_y copy_w copy_h <<< "$(rect code sync-copy)"
+read -r composer_x composer_y composer_w composer_h <<< "$(rect menu composer)"
+[ "$(jq -r '[.elements[] | select(.key == "overflow-item2")][0].label' "$work/twin-menu.json")" = "Sync…" ] \
+  || fail "the menu's third item is not Sync…"
+[ -n "$copy_w" ] || fail "the headless twin shows no Copy Code button"
+
+region() {
+  DISPLAY=${display[$1]} import -window "${window[$1]}" -crop "$4x$5+$2+$3" +repage rgb:- 2> /dev/null | md5sum
+}
+press() {
+  local name=$1 x=$2 y=$3 w=$4 h=$5 before
+  shift 5
+  before=$(region "$name" "$@")
+  DISPLAY=${display[$name]} xdotool mousemove --window "${window[$name]}" $((x + w / 2)) $((y + h / 2)) click 1
+  wait_for 5000 '[ "$(region "$name" "$@")" != "$before" ]' || fail "$name: pressing at $x,$y changed nothing at $*"
+}
+open_sheet() {
+  press "$1" "$more_x" "$more_y" "$more_w" "$more_h" "$item_x" "$item_y" "$item_w" "$item_h"
+  press "$1" "$item_x" "$item_y" "$item_w" "$item_h" "$field_x" "$field_y" "$field_w" "$field_h"
+}
+clipboard() {
+  DISPLAY=${display[$1]} python3 -c 'import tkinter; r = tkinter.Tk(); r.withdraw(); print(r.selection_get(selection="CLIPBOARD"))' 2> /dev/null
+}
+hold_clipboard() {
+  DISPLAY=${display[$1]} python3 -c 'import sys, tkinter
+root = tkinter.Tk()
+root.withdraw()
+root.clipboard_clear()
+root.clipboard_append(sys.argv[1])
+root.mainloop()' "$2" &
+  pids+=($!)
+}
+close_sheet() {
+  local before
+  before=$(region "$1" "$field_x" "$field_y" "$field_w" "$field_h")
+  DISPLAY=${display[$1]} xdotool key Escape
+  wait_for 5000 '[ "$(region "$1" "$field_x" "$field_y" "$field_w" "$field_h")" != "$before" ]' || fail "$1: Escape left the sheet open"
+  DISPLAY=${display[$1]} xdotool mousemove --window "${window[$1]}" $((composer_x + 20)) $((composer_y + composer_h / 2)) click 1
+}
+both_hold() { holds c "$1" && holds d "$1"; }
+
+mkdir -p "$work/c" "$work/d"
+display[c]=${display[a]} display[d]=${display[b]}
+launch c
+launch d
+type_note c "Typed on c before setup"
+type_note d "Typed on d before setup"
+wait_for 5000 'holds c "Typed on c before setup" && holds d "Typed on d before setup"' || fail "setup: the first notes were not saved"
+
+open_sheet c
+DISPLAY=${display[c]} xdotool type --delay 2 "$address"
+before=$(region c "$copy_x" "$copy_y" "$copy_w" "$copy_h")
+DISPLAY=${display[c]} xdotool key Return
+wait_for 5000 '[ -e "$work/c/sync.json" ]' || fail "setup: Start New Vault wrote no sync.json"
+wait_for 5000 '[ "$(region c "$copy_x" "$copy_y" "$copy_w" "$copy_h")" != "$before" ]' || fail "setup: no Copy Code button"
+DISPLAY=${display[c]} xdotool mousemove --window "${window[c]}" $((copy_x + copy_w / 2)) $((copy_y + copy_h / 2)) click 1
+wait_for 5000 '[[ "$(clipboard c)" == "$address#bronze1-"* ]]' || fail "setup: Copy Code put no sync code on c's clipboard"
+code=$(clipboard c)
+pass "setup: on c the menu's Sync… started a vault on $address, and Copy Code put a ${#code}-character sync code on the clipboard"
+
+hold_clipboard d "$code"
+wait_for 5000 '[ "$(clipboard d)" = "$code" ]' || fail "setup: the code did not reach d's clipboard"
+open_sheet d
+DISPLAY=${display[d]} xdotool key ctrl+v
+wait_for 5000 'DISPLAY=${display[d]} xdotool key Return; [ -e "$work/d/sync.json" ]' || fail "setup: pasting the code and Return did not join on d"
+grep -qF "${code#*#}" "$work/d/sync.json" || fail "setup: d joined with a different key"
+wait_for 30000 'both_hold "Typed on c before setup" && both_hold "Typed on d before setup"' \
+  || fail "setup: c and d did not merge: c $(outline c), d $(outline d)"
+pass "setup: d joined by pasting the code into its field and pressing Return, and both hold both notes"
+
+close_sheet c
+close_sheet d
+type_note c "Typed on c after setup"
+type_note d "Typed on d after setup"
+wait_for 10000 'both_hold "Typed on c after setup" && both_hold "Typed on d after setup"' \
+  || fail "setup: a new note did not cross: c $(outline c), d $(outline d)"
+pass "setup: a note typed in either window reached the other"
 
 echo "sync-check: ok"
