@@ -5,7 +5,8 @@ use bronze_sync::{Limits, Store, serve};
 use reqwest::header::{AUTHORIZATION, ETAG, IF_MATCH, IF_NONE_MATCH, WWW_AUTHENTICATE};
 use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use tempfile::TempDir;
-use tokio::net::TcpListener;
+use tokio::io::AsyncWriteExt;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -86,6 +87,12 @@ fn random_hex() -> String {
 
 fn etag(response: &Response) -> Option<String> {
     Some(response.headers().get(ETAG)?.to_str().unwrap().to_owned())
+}
+
+fn busy_store(data: &Path) -> rusqlite::Connection {
+    let connection = rusqlite::Connection::open(data.join("bronze-sync.sqlite3")).unwrap();
+    connection.execute_batch("BEGIN IMMEDIATE").unwrap();
+    connection
 }
 
 async fn started(limits: Limits) -> (TempDir, Server) {
@@ -266,6 +273,65 @@ async fn a_long_poll_answers_304_at_its_timeout() {
     let unchanged = vault.get().header(IF_NONE_MATCH, &first).send().await.unwrap();
     assert_eq!(unchanged.status(), StatusCode::NOT_MODIFIED);
     assert!(started.elapsed() < Duration::from_secs(1));
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn a_write_whose_writer_hangs_up_still_wakes_parked_long_polls() {
+    let (data, server) = started(Limits::default()).await;
+    let vault = server.vault();
+    let first = vault.create("one").await;
+    let parked = {
+        let get = vault.get().header(IF_NONE_MATCH, &first).header("Prefer", "wait=3");
+        tokio::spawn(async move {
+            let woke = get.send().await.unwrap();
+            (woke.status(), etag(&woke), woke.text().await.unwrap())
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let busy = busy_store(data.path());
+    let mut writer = TcpStream::connect(server.base.trim_start_matches("http://")).await.unwrap();
+    let put = format!(
+        "PUT /v1/vaults/{} HTTP/1.1\r\nHost: bronze\r\nAuthorization: Bearer {}\r\nIf-Match: {first}\r\nContent-Length: 3\r\n\r\ntwo",
+        vault.id, vault.token
+    );
+    writer.write_all(put.as_bytes()).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    writer.set_zero_linger().unwrap();
+    drop(writer);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    busy.execute_batch("ROLLBACK").unwrap();
+    drop(busy);
+
+    let woke = parked.await.unwrap();
+    let (current, body) = vault.body().await;
+    assert_eq!(body, "two");
+    assert_eq!(woke, (StatusCode::OK, current, "two".to_owned()));
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn a_long_poll_answers_by_its_deadline_while_the_store_is_busy() {
+    let (data, server) = started(Limits::default()).await;
+    let vault = server.vault();
+    let first = vault.create("one").await;
+    let other = server.vault();
+    let other_first = other.create("other").await;
+
+    let busy = busy_store(data.path());
+    let stuck_write = tokio::spawn(other.put().header(IF_MATCH, &other_first).body("two").send());
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let poll = tokio::spawn(vault.get().header(IF_NONE_MATCH, &first).header("Prefer", "wait=1").send());
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    let answered_in_time = poll.is_finished();
+    busy.execute_batch("ROLLBACK").unwrap();
+    drop(busy);
+
+    let poll = poll.await.unwrap().unwrap();
+    assert!(answered_in_time, "a wait=1 poll was still pending 2.5s later");
+    assert_eq!((poll.status(), etag(&poll)), (StatusCode::NOT_MODIFIED, Some(first)));
+    assert_eq!(stuck_write.await.unwrap().unwrap().status(), StatusCode::NO_CONTENT);
     server.stop().await;
 }
 
