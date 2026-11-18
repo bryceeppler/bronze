@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -1 833 162" color="#ececee">
+  <defs><linearGradient id="metal" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="420" y2="540"><stop offset="0" stop-color="#f4c590"/><stop offset="0.5" stop-color="#d78c4b"/><stop offset="1" stop-color="#9a5526"/></linearGradient></defs>
+  <g transform="scale(0.2963)" fill="url(#metal)" fill-rule="evenodd">
+    <path d="M40 0h220a120 120 0 0 1 0 240H40A40 40 0 0 1 0 200V40A40 40 0 0 1 40 0ZM110 100a20 20 0 0 0 0 40h150a20 20 0 0 0 0-40Z"/>
+    <path d="M40 280h250a130 130 0 0 1 0 260H40a40 40 0 0 1-40-40V320a40 40 0 0 1 40-40ZM110 390a20 20 0 0 0 0 40h190a20 20 0 0 0 0-40Z"/>
+  </g>
+  <g transform="translate(168 0)">
+    <path fill="none" stroke="currentColor" stroke-width="22" d="M11 0V160M133 60V160M133 110A40 40 0 0 1 201.3 81.7M354 60V160M354 110A40 40 0 0 1 434 110V160M574 110H654A40 40 0 1 0 644.6 135.7"/>
+    <circle cx="51" cy="110" r="40" fill="none" stroke="currentColor" stroke-width="22"/>
+    <circle cx="272" cy="110" r="40" fill="none" stroke="currentColor" stroke-width="22"/>
+    <path fill="currentColor" d="M467 60H545V82L504.7 138H545V160H467V138L507.3 82H467Z"/>
+  </g>
+</svg>

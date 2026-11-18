@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -1 665 163" color="#1c1c1e">
+  <path fill="none" stroke="currentColor" stroke-width="22" d="M11 0V160M133 60V160M133 110A40 40 0 0 1 201.3 81.7M354 60V160M354 110A40 40 0 0 1 434 110V160M574 110H654A40 40 0 1 0 644.6 135.7"/>
+    <circle cx="51" cy="110" r="40" fill="none" stroke="currentColor" stroke-width="22"/>
+    <circle cx="272" cy="110" r="40" fill="none" stroke="currentColor" stroke-width="22"/>
+    <path fill="currentColor" d="M467 60H545V82L504.7 138H545V160H467V138L507.3 82H467Z"/>
+</svg>
