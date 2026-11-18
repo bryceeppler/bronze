@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "active": "Prompts",
+  "loose": [],
+  "sections": [
+    {
+      "name": "Prompts",
+      "notes": [
+        {
+          "text": "Explain this stack trace and suggest the **smallest fix** that keeps the public API",
+          "done": false
+        },
+        {
+          "text": "Rewrite the error messages in plain language, one sentence each",
+          "done": true
+        }
+      ]
+    },
+    {
+      "name": "Research",
+      "notes": [
+        {
+          "text": "**Key rotation.** How do other encrypted apps re-wrap keys?",
+          "done": false
+        },
+        {
+          "text": "Check whether `fsync` on the parent folder is needed after a rename",
+          "done": false
+        }
+      ]
+    },
+    {
+      "name": "Launch",
+      "notes": [
+        {
+          "text": "Write the announcement in *plain* language",
+          "done": false
+        }
+      ]
+    }
+  ]
+}

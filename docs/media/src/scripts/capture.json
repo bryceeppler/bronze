@@ -1,0 +1,4 @@
+{"events": [
+  {"t": 1.9, "type": "shortcut", "chord": "ctrl+alt+c"},
+  {"t": 3.8, "type": "mark", "name": "end"}
+]}
