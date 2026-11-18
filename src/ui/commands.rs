@@ -1,6 +1,7 @@
 use rune::{KeyEvent, KeyPlatform, Keybind, Tx};
 
 use super::app::App;
+use crate::taps::Gesture;
 
 #[derive(Clone, Copy)]
 enum Command {
@@ -37,6 +38,20 @@ impl Global {
         }
     }
 
+    pub fn gesture(self) -> Gesture {
+        match self {
+            Global::Capture => Gesture::DoubleLeftShift,
+            Global::ShowOrHide => Gesture::BothShifts,
+        }
+    }
+
+    pub fn of(gesture: Gesture) -> Global {
+        match gesture {
+            Gesture::DoubleLeftShift => Global::Capture,
+            Gesture::BothShifts => Global::ShowOrHide,
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Global::Capture => "The capture shortcut",
@@ -46,8 +61,8 @@ impl Global {
 
     pub fn what(self) -> &'static str {
         match self {
-            Global::Capture => "Capture selected text anywhere",
-            Global::ShowOrHide => "Show or hide Bronze anywhere",
+            Global::Capture => "Capture selected text",
+            Global::ShowOrHide => "Show or hide Bronze",
         }
     }
 }
@@ -77,6 +92,13 @@ pub fn label(keys: &str) -> String {
     Keybind::new(keys).label()
 }
 
+fn gesture_label(gesture: Gesture) -> &'static str {
+    match gesture {
+        Gesture::DoubleLeftShift => "Double-tap Left Shift",
+        Gesture::BothShifts => "Right Shift + Left Shift",
+    }
+}
+
 pub fn cheat_sheet() -> Vec<(String, &'static str)> {
     let (toggle, extend) = match KeyPlatform::current() {
         KeyPlatform::Mac => ("⌘-click", "⇧-click"),
@@ -91,6 +113,17 @@ pub fn cheat_sheet() -> Vec<(String, &'static str)> {
     ]
     .into_iter()
     .chain(BINDINGS.iter().map(|&(_, keys, what)| (label(keys), what)))
-    .chain(Global::ALL.map(|global| (label(global.chord()), global.what())))
     .collect()
+}
+
+pub fn anywhere() -> Vec<(String, &'static str)> {
+    let gestures = match KeyPlatform::current() {
+        KeyPlatform::Mac => Global::ALL.as_slice(),
+        KeyPlatform::Windows | KeyPlatform::Linux => &[],
+    };
+    gestures
+        .iter()
+        .map(|global| (gesture_label(global.gesture()).to_owned(), global.what()))
+        .chain(Global::ALL.map(|global| (label(global.chord()), global.what())))
+        .collect()
 }

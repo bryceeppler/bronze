@@ -1,11 +1,12 @@
 use rune::tok::type_;
-use rune::{Cursor, El, Key, KeyEvent, ScrollSpec, Tx, col, el, icon, row, text, text_input};
+use rune::{Cursor, El, Key, KeyEvent, ScrollSpec, TextCase, Tx, col, el, icon, row, text, text_input};
 use rune_kit::{Kit, Menu, MenuItem, context_menu};
 
 use super::app::{App, Overlay, Pick, pick_key};
 use super::chrome::{BODY, clear_of_caret};
 use super::commands;
 use super::icons;
+use super::list::SECTION_LABEL;
 use super::look::Look;
 use crate::board::Scope;
 
@@ -149,17 +150,26 @@ fn switcher_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
 }
 
 fn shortcuts(look: &Look) -> El {
-    let mut rows = col().key("shortcut-rows").px(14.0).pb(10.0);
-    for (keys, what) in commands::cheat_sheet() {
-        rows = rows.child(
-            row()
-                .h(28.0)
-                .gap(12.0)
-                .center_y()
-                .child(text(what).font(BODY).color(look.text).grow(1.0).truncate())
-                .child(text(keys).font(type_::LABEL).color(look.muted)),
-        );
-    }
+    let shortcut_row = |(keys, what): (String, &'static str)| {
+        row()
+            .h(28.0)
+            .gap(12.0)
+            .center_y()
+            .child(text(what).font(BODY).color(look.text).grow(1.0).truncate())
+            .child(text(keys).font(type_::LABEL).color(look.muted))
+    };
+    let anywhere = row()
+        .h(28.0)
+        .mt(6.0)
+        .center_y()
+        .child(text("From any app").font(SECTION_LABEL).color(look.label).text_case(TextCase::Uppercase));
+    let rows = col()
+        .key("shortcut-rows")
+        .px(14.0)
+        .pb(10.0)
+        .children(commands::cheat_sheet().into_iter().map(shortcut_row))
+        .child(anywhere)
+        .children(commands::anywhere().into_iter().map(shortcut_row));
     col()
         .key("shortcuts")
         .child(row().h(40.0).px(14.0).center_y().child(text("Keyboard Shortcuts").font(type_::TITLE).color(look.text)))

@@ -15,7 +15,7 @@ use crate::inline::{self, Mark};
 
 const GAP: f32 = 8.0;
 const CONTENT_KEY: &str = "list-content";
-const SECTION_LABEL: rune::TextStyle = type_::SECTION.tracking(0.6);
+pub const SECTION_LABEL: rune::TextStyle = type_::SECTION.tracking(0.6);
 
 struct Geometry {
     origin: f32,
