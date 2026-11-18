@@ -18,7 +18,7 @@ There is no account, no sync and no telemetry.
 cargo run
 ```
 
-Linux needs the packages Rune lists under "Linux" in its README.
+Linux needs the packages listed under [Linux](#linux).
 `--data <dir>` keeps notes and preferences in a folder of your choice.
 
 ## Mac
@@ -45,6 +45,24 @@ Both Shift gestures are ignored while a full-screen app such as a game is in fro
 While an app running as administrator has focus, Windows keeps its keys and its text from Bronze, so the gestures do nothing there and capture finds nothing.
 The release build has no console window; run `.\target\release\bronze.exe 2> bronze.log` to keep its log.
 
+## Linux
+
+```sh
+sudo apt install build-essential pkg-config libfontconfig-dev libxkbcommon-dev
+./scripts/linux-app.sh
+```
+
+Those are the build packages on Ubuntu and Debian.
+Bronze draws with Vulkan, so it also needs a Vulkan driver, such as `mesa-vulkan-drivers`.
+The script builds Bronze and installs it for you alone: the binary in `~/.local/bin`, its icon, and an entry that puts Bronze in your app launcher.
+Run it again to update.
+Pass `--autostart` to also start Bronze at login, and `--uninstall` to remove what it installed.
+Uninstalling keeps your notes in `~/.local/share/bronze`.
+
+On X11, everything works except the Shift gestures, which Linux does not have yet, so use `Ctrl+Alt+C` and `Ctrl+Alt+Space`.
+On Wayland, Bronze starts, and the rest is untested.
+Its global shortcuts need the desktop's global shortcuts portal, and capture needs a compositor that shares the selected text with other apps.
+
 ## Shortcuts
 
 | Action | Shortcut |
@@ -70,6 +88,7 @@ Ctrl+Insert copies like Ctrl+C in standard Windows controls, browsers, Electron 
 ```sh
 ./scripts/check.sh        # format, lint, tests, every scene rendered headless, scripted runs
 ./scripts/real-window.sh  # a real window under Xvfb: capture, show and hide, remembered position
+./scripts/linux-app-check.sh  # install into a temp home, launch from the launcher entry under Xvfb, capture, uninstall
 ```
 
 On Windows, `scripts\real-window.ps1` drives real windows with injected keys: both capture paths, the chord held like a person holds it, show and hide, the timelines that must not capture, and the gestures over a full-screen app.
