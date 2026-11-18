@@ -169,8 +169,8 @@ impl Board {
     }
 
     pub fn capture(&mut self, text: impl Into<String>) -> NoteId {
-        let position = self.position(self.active.map_or(Owner::Loose, Owner::Section), None, None);
         let at = self.tick();
+        let position = self.position(self.active.map_or(Owner::Loose, Owner::Section), None, None, at);
         let id = self.add(text.into(), false, position, at);
         self.project();
         id
@@ -225,8 +225,8 @@ impl Board {
             Place::End(owner) if self.lists(Scope::All).iter().any(|l| l.owner == owner) => (owner, None),
             Place::End(_) => return,
         };
-        let position = self.position(owner, before, Some(id));
         let at = self.tick();
+        let position = self.position(owner, before, Some(id), at);
         self.place(id, position, at);
         self.project();
     }
@@ -313,16 +313,40 @@ impl Board {
         }
     }
 
-    fn position(&mut self, owner: Owner, before: Option<NoteId>, moving: Option<NoteId>) -> Position {
-        let list: Vec<NoteId> = self
+    fn rerank(&mut self, id: NoteId, rank: Rank, at: Stamp) {
+        if let Some(NoteRecord::Live { place, .. }) = self.replica.notes.get_mut(&id) {
+            *place = Reg { value: Position { section: place.value.section, rank }, at };
+        }
+    }
+
+    fn position(&mut self, owner: Owner, before: Option<NoteId>, moving: Option<NoteId>, at: Stamp) -> Position {
+        let list: Vec<(NoteId, Rank)> = self
             .lists(Scope::All)
             .iter()
             .find(|l| l.owner == owner)
-            .map(|l| l.notes.iter().map(|n| n.id).filter(|id| Some(*id) != moving).collect())
+            .map(|l| {
+                l.notes
+                    .iter()
+                    .filter(|n| Some(n.id) != moving)
+                    .filter_map(|n| Some((n.id, self.position_of(n.id)?.rank.clone())))
+                    .collect()
+            })
             .unwrap_or_default();
-        let at = before.and_then(|b| list.iter().position(|id| *id == b)).unwrap_or(list.len());
-        let rank = |i: usize| list.get(i).and_then(|id| self.position_of(*id)).map(|p| p.rank.clone());
-        let (lo, hi) = (at.checked_sub(1).and_then(rank), rank(at));
+        let index = before.and_then(|b| list.iter().position(|(id, _)| *id == b)).unwrap_or(list.len());
+        let lo = index.checked_sub(1).map(|i| list[i].1.clone());
+        let mut hi = list.get(index).map(|(_, rank)| rank.clone());
+        if let (Some(lo), Some(tied)) = (&lo, &hi)
+            && tied == lo
+        {
+            let run: Vec<NoteId> = list[index..].iter().take_while(|(_, rank)| rank == lo).map(|(id, _)| *id).collect();
+            let mut after = list.get(index + run.len()).map(|(_, rank)| rank.clone());
+            for id in run.into_iter().rev() {
+                let rank = Rank::between(Some(lo), after.as_ref(), &mut self.rng);
+                self.rerank(id, rank.clone(), at);
+                after = Some(rank);
+            }
+            hi = after;
+        }
         let section = match owner {
             Owner::Loose => None,
             Owner::Section(id) => Some(id),

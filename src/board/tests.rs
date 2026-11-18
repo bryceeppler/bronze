@@ -266,6 +266,29 @@ fn merging_keeps_the_text_of_a_picked_note_deleted_elsewhere_at_the_same_time() 
 }
 
 #[test]
+fn a_note_dropped_between_the_notes_two_machines_merged_from_the_same_pair_lands_between_them() {
+    let (mut mac, mut linux) = (Board::seeded(1), Board::seeded(2));
+    for text in ["first", "second", "third"] {
+        mac.submit(text);
+    }
+    linux.join(mac.replica());
+    let pair = [id_of(&mac, "first"), id_of(&mac, "second")];
+    mac.merge(&pair);
+    linux.merge(&pair);
+    sync(&mut mac, &mut linux);
+    let merged: Vec<NoteId> = mac.loose().iter().filter(|n| n.text == "first\n\nsecond").map(|n| n.id).collect();
+    assert_eq!(merged.len(), 2);
+
+    let third = id_of(&mac, "third");
+    mac.move_note(third, Place::Before(merged[1]));
+    linux.join(mac.replica());
+
+    for board in [&mac, &linux] {
+        assert_eq!(board.loose().iter().map(|n| n.id).collect::<Vec<_>>(), [merged[0], third, merged[1]]);
+    }
+}
+
+#[test]
 fn sections_named_alike_on_two_machines_show_as_one_that_renames_and_removes_as_one() {
     let (mut mac, mut linux) = (Board::seeded(1), Board::seeded(2));
     mac.submit("# Research");

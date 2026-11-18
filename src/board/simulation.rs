@@ -33,6 +33,15 @@ enum Outcome {
     Merges,
 }
 
+fn lands(board: &Board, id: NoteId, to: Place) -> bool {
+    let lists = board.lists(Scope::All);
+    match to {
+        Place::Before(other) if other == id => true,
+        Place::Before(other) => lists.iter().any(|l| l.notes.windows(2).any(|w| (w[0].id, w[1].id) == (id, other))),
+        Place::End(owner) => lists.iter().any(|l| l.owner == owner && l.notes.last().is_some_and(|n| n.id == id)),
+    }
+}
+
 struct World {
     seed: u64,
     rng: fastrand::Rng,
@@ -118,6 +127,11 @@ impl World {
                     _ => Place::End(rng.choice(&sections).map_or(Owner::Loose, |&s| Owner::Section(s))),
                 };
                 board.move_note(id, to);
+                assert!(
+                    lands(board, id, to),
+                    "a moved note lands where it was dropped, seed {} step {step}",
+                    self.seed
+                );
             }
             7 => {
                 board.clear_done(if rng.bool() { Scope::All } else { Scope::Active });
