@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::mem::size_of;
+use std::mem::{self, size_of};
 use std::path::Path;
 use std::process::Command;
 use std::sync::{Mutex, PoisonError};
@@ -28,9 +28,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, MapVirtualKeyW, SendInput, VIRTUAL_KEY, VK_CONTROL, VK_INSERT, VK_LBUTTON,
     VK_LSHIFT, VK_LWIN, VK_MBUTTON, VK_MENU, VK_RBUTTON, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_XBUTTON1, VK_XBUTTON2,
 };
+use windows::Win32::UI::Shell::{
+    QUERY_USER_NOTIFICATION_STATE, QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, KillTimer, MSG, SetTimer, SetWindowsHookExW,
-    UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN, WM_TIMER,
+    CallNextHookEx, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, KillTimer, MSG, PostMessageW, SetTimer, SetWindowsHookExW,
+    UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_APP, WM_KEYDOWN, WM_SYSKEYDOWN, WM_TIMER,
 };
 use windows::core::{PCWSTR, w};
 
@@ -287,7 +290,7 @@ fn utf16_text(bytes: &[u8]) -> String {
 pub fn listen(on_gesture: impl Fn(Gesture) + Send + 'static) {
     thread::Builder::new()
         .name("bronze-shift-listener".into())
-        .spawn(move || hear(Box::new(on_gesture)))
+        .spawn(move || hear(on_gesture))
         .expect("spawn the Shift listener");
 }
 
@@ -299,11 +302,11 @@ struct Listener {
     ear: Ear,
     started: Instant,
     timer: Option<usize>,
-    on_gesture: Box<dyn Fn(Gesture)>,
+    fired: Vec<Gesture>,
 }
 
-fn hear(on_gesture: Box<dyn Fn(Gesture)>) {
-    LISTENER.set(Some(Listener { ear: Ear::default(), started: Instant::now(), timer: None, on_gesture }));
+fn hear(on_gesture: impl Fn(Gesture)) {
+    LISTENER.set(Some(Listener { ear: Ear::default(), started: Instant::now(), timer: None, fired: Vec::new() }));
     let module = unsafe { GetModuleHandleW(PCWSTR::null()) }.ok().map(HINSTANCE::from);
     let hook = match unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(on_key), module, 0) } {
         Ok(hook) => hook,
@@ -312,8 +315,16 @@ fn hear(on_gesture: Box<dyn Fn(Gesture)>) {
     eprintln!("bronze: listening for Shift gestures");
     let mut message = MSG::default();
     while unsafe { GetMessageW(&mut message, None, 0, 0) }.0 > 0 {
-        if message.message == WM_TIMER {
-            notice(Event::Tick { button: BUTTONS.into_iter().any(is_down) });
+        match message.message {
+            WM_TIMER => notice(Event::Tick { button: BUTTONS.into_iter().any(is_down) }),
+            WM_APP => {
+                for gesture in fired() {
+                    if !full_screen_in_front() {
+                        on_gesture(gesture);
+                    }
+                }
+            }
+            _ => {}
         }
     }
     let _ = unsafe { UnhookWindowsHookEx(hook) };
@@ -336,12 +347,19 @@ fn notice(event: Event) {
     });
 }
 
+fn fired() -> Vec<Gesture> {
+    LISTENER.with_borrow_mut(|listener| {
+        listener.as_mut().map(|listener| mem::take(&mut listener.fired)).unwrap_or_default()
+    })
+}
+
 impl Listener {
     fn notice(&mut self, event: Event) {
         let at = self.started.elapsed();
         let before = Shifts { left: is_down(VK_LSHIFT), right: is_down(VK_RSHIFT) };
         if let Some(gesture) = self.ear.hear(before, event, at) {
-            (self.on_gesture)(gesture);
+            self.fired.push(gesture);
+            let _ = unsafe { PostMessageW(None, WM_APP, WPARAM(0), LPARAM(0)) };
         }
         match (self.ear.watching_buttons(at), self.timer) {
             (true, None) => self.timer = Some(unsafe { SetTimer(None, 0, BUTTON_POLL_MS, None) }).filter(|&id| id != 0),
@@ -352,6 +370,14 @@ impl Listener {
             _ => {}
         }
     }
+}
+
+fn full_screen_in_front() -> bool {
+    unsafe { SHQueryUserNotificationState() }.is_ok_and(silences_gestures)
+}
+
+fn silences_gestures(state: QUERY_USER_NOTIFICATION_STATE) -> bool {
+    matches!(state, QUNS_BUSY | QUNS_RUNNING_D3D_FULL_SCREEN)
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -455,7 +481,12 @@ impl Ear {
 mod tests {
     use std::time::Duration;
 
-    use super::{Ear, Event, Key, Shifts, Stroke, restorable, unix_lines, utf16_text};
+    use windows::Win32::UI::Shell::{
+        QUNS_ACCEPTS_NOTIFICATIONS, QUNS_APP, QUNS_BUSY, QUNS_NOT_PRESENT, QUNS_PRESENTATION_MODE, QUNS_QUIET_TIME,
+        QUNS_RUNNING_D3D_FULL_SCREEN,
+    };
+
+    use super::{Ear, Event, Key, Shifts, Stroke, restorable, silences_gestures, unix_lines, utf16_text};
     use crate::taps::{Gesture, Side, TAP_WINDOW};
 
     const NONE: Shifts = Shifts { left: false, right: false };
@@ -554,6 +585,16 @@ mod tests {
         ear.hear(NONE, Event::Tick { button: false }, at(5000));
         assert!(ear.watching_buttons(at(5000) + TAP_WINDOW - at(1)));
         assert!(!ear.watching_buttons(at(5000) + TAP_WINDOW));
+    }
+
+    #[test]
+    fn only_a_full_screen_app_in_front_silences_the_gestures() {
+        for state in [QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN] {
+            assert!(silences_gestures(state), "{state:?}");
+        }
+        for state in [QUNS_ACCEPTS_NOTIFICATIONS, QUNS_NOT_PRESENT, QUNS_PRESENTATION_MODE, QUNS_QUIET_TIME, QUNS_APP] {
+            assert!(!silences_gestures(state), "{state:?}");
+        }
     }
 
     #[test]

@@ -41,6 +41,7 @@ cargo build --release
 
 Bronze needs no permission on Windows.
 Double-tap Left Shift to capture the selected text, and press Right Shift with Left Shift to show or hide Bronze.
+Both Shift gestures are ignored while a full-screen app such as a game is in front, and `Ctrl+Alt+C` and `Ctrl+Alt+Space` still work there.
 While an app running as administrator has focus, Windows keeps its keys and its text from Bronze, so the gestures do nothing there and capture finds nothing.
 The release build has no console window; run `.\target\release\bronze.exe 2> bronze.log` to keep its log.
 
