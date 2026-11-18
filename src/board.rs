@@ -1,6 +1,8 @@
 mod rank;
 mod replica;
 #[cfg(test)]
+mod simulation;
+#[cfg(test)]
 mod tests;
 
 use std::collections::HashMap;
