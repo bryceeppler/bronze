@@ -231,7 +231,7 @@ impl<F: Fn(Gesture)> Listener<F> {
         let mode = unsafe { kCFRunLoopDefaultMode };
         *self.tap.borrow_mut() = Some(tap.retain());
         run_loop.add_source(Some(&source), mode);
-        while alive(tap) {
+        while access() == Access::Granted && alive(tap) {
             CFRunLoop::run_in_mode(mode, TAP_RETRY.as_secs_f64(), false);
         }
         run_loop.remove_source(Some(&source), mode);
@@ -255,15 +255,14 @@ impl<F: Fn(Gesture)> Listener<F> {
 
 impl Hearing {
     fn announce(self, last: &mut Option<Hearing>) {
-        if last.replace(self) != Some(self) {
-            eprintln!(
-                "{}",
-                match self {
-                    Hearing::Listening => "bronze: listening for Shift gestures",
-                    Hearing::Waiting => "bronze: waiting for Accessibility access",
-                }
-            );
+        if last.replace(self) == Some(self) {
+            return;
         }
+        let line = match self {
+            Hearing::Listening => "bronze: listening for Shift gestures",
+            Hearing::Waiting => "bronze: waiting for Accessibility access",
+        };
+        eprintln!("{line}");
     }
 }
 
