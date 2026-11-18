@@ -58,3 +58,19 @@ A future Mac or Windows capture should replace the development-host shots before
 
 The proposed README defers its MIT badge until the actual license file lands.
 It makes no sync availability claim.
+
+## Verification and preview hosting
+
+`validation.json` records the decoded asset dimensions, GIF frames, durations, and sizes.
+`verification.txt` records final macOS decoding, HTTP checks from loki, text-palette contrast ratios, and preview service status.
+The optional design detector used a regex fallback, so it was supplemented with explicit contrast calculations.
+
+An independent Opus 5.5 technical review found no blockers.
+Its minor findings led to a Linux-inclusive platform badge, larger hero captions, pointer-free still captures, local relative preview paths, a persistent preview service, and recorded contrast evidence.
+The creative artwork remains independently authored by GPT-6.1 Sol on high.
+
+The requested preview is staged outside the repository at `~/.local/share/bronze-set-b-preview` on odin.
+The enabled user service is `bronze-set-b-preview.service`, with an installed unit in `~/.config/systemd/user`.
+The user manager has lingering enabled, and the service restarts on failure.
+It serves only the staged static assets and accepts no uploads or application mutations.
+The page is available at `http://odin:8798/` on the tailnet.

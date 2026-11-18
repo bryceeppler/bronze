@@ -86,6 +86,8 @@ def main():
                         "error",
                         "-f",
                         "x11grab",
+                        "-draw_mouse",
+                        "0",
                         "-video_size",
                         "400x700",
                         "-i",

@@ -20,7 +20,7 @@ for theme, background, ink in [
     )
     canvas.alpha_composite(logo, (100, 190))
     font = ImageFont.truetype("/usr/share/fonts/truetype/lato/Lato-Regular.ttf", 55)
-    label = ImageFont.truetype("/usr/share/fonts/truetype/lato/Lato-Regular.ttf", 25)
+    label = ImageFont.truetype("/usr/share/fonts/truetype/lato/Lato-Regular.ttf", 42)
     draw = ImageDraw.Draw(canvas)
     draw.text(
         (104, 375),
@@ -31,7 +31,7 @@ for theme, background, ink in [
     )
     draw.text(
         (107, 570),
-        "A small capture panel for\nnotes and prompts.",
+        "A small capture panel\nfor notes and prompts.",
         font=label,
         fill=ink,
         spacing=9,

@@ -11,7 +11,7 @@
 <p align="center">
   <img src="assets/brand/badge-rust.svg" alt="Built with Rust">
   <img src="assets/brand/badge-rune.svg" alt="UI built with Rune">
-  <img src="assets/brand/badge-platforms.svg" alt="macOS and Windows">
+  <img src="assets/brand/badge-platforms.svg" alt="macOS, Windows, and Linux">
   <img src="assets/brand/badge-status.svg" alt="Early development">
 </p>
 
