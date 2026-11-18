@@ -264,19 +264,29 @@ read -r composer_x composer_y composer_w composer_h <<< "$(rect menu composer)"
   || fail "the menu's third item is not Sync…"
 [ -n "$copy_w" ] || fail "the headless twin shows no Copy Code button"
 
+keys() { DISPLAY=${display[$1]} xdotool windowfocus --sync "${window[$1]}" "${@:2}"; }
+hint=("$field_x" $((field_y + field_h + 8)) "$field_w" 40)
 region() {
   DISPLAY=${display[$1]} import -window "${window[$1]}" -crop "$4x$5+$2+$3" +repage rgb:- 2> /dev/null | md5sum
 }
-press() {
-  local name=$1 x=$2 y=$3 w=$4 h=$5 before
-  shift 5
-  before=$(region "$name" "$@")
-  DISPLAY=${display[$name]} xdotool mousemove --window "${window[$name]}" $((x + w / 2)) $((y + h / 2)) click 1
-  wait_for 5000 '[ "$(region "$name" "$@")" != "$before" ]' || fail "$name: pressing at $x,$y changed nothing at $*"
+settled() {
+  local now
+  now=$(region "$@")
+  [ "$now" != "$before" ] && sleep 0.15 && [ "$(region "$@")" = "$now" ]
 }
+after() {
+  local name=$1 what=$2 before
+  shift 2
+  before=$(region "$name" "$@")
+  "${act[@]}"
+  wait_for 5000 'settled "$name" "$@"' || fail "$name: $what changed nothing at $*"
+}
+click() { act=(env DISPLAY="${display[$1]}" xdotool mousemove --window "${window[$1]}" $(($2 + $4 / 2)) $(($3 + $5 / 2)) click 1); }
 open_sheet() {
-  press "$1" "$more_x" "$more_y" "$more_w" "$more_h" "$item_x" "$item_y" "$item_w" "$item_h"
-  press "$1" "$item_x" "$item_y" "$item_w" "$item_h" "$field_x" "$field_y" "$field_w" "$field_h"
+  click "$1" "$more_x" "$more_y" "$more_w" "$more_h"
+  after "$1" "opening the menu" "$item_x" "$item_y" "$item_w" "$item_h"
+  click "$1" "$item_x" "$item_y" "$item_w" "$item_h"
+  after "$1" "choosing Sync…" "${hint[@]}"
 }
 clipboard() {
   DISPLAY=${display[$1]} python3 -c 'import tkinter; r = tkinter.Tk(); r.withdraw(); print(r.selection_get(selection="CLIPBOARD"))' 2> /dev/null
@@ -291,10 +301,8 @@ root.mainloop()' "$2" &
   pids+=($!)
 }
 close_sheet() {
-  local before
-  before=$(region "$1" "$field_x" "$field_y" "$field_w" "$field_h")
-  DISPLAY=${display[$1]} xdotool key Escape
-  wait_for 5000 '[ "$(region "$1" "$field_x" "$field_y" "$field_w" "$field_h")" != "$before" ]' || fail "$1: Escape left the sheet open"
+  act=(keys "$1" key Escape)
+  after "$1" "Escape" "${hint[@]}"
   DISPLAY=${display[$1]} xdotool mousemove --window "${window[$1]}" $((composer_x + 20)) $((composer_y + composer_h / 2)) click 1
 }
 both_hold() { holds c "$1" && holds d "$1"; }
@@ -308,11 +316,11 @@ type_note d "Typed on d before setup"
 wait_for 5000 'holds c "Typed on c before setup" && holds d "Typed on d before setup"' || fail "setup: the first notes were not saved"
 
 open_sheet c
-DISPLAY=${display[c]} xdotool type --delay 2 "$address"
-before=$(region c "$copy_x" "$copy_y" "$copy_w" "$copy_h")
-DISPLAY=${display[c]} xdotool key Return
-wait_for 5000 '[ -e "$work/c/sync.json" ]' || fail "setup: Start New Vault wrote no sync.json"
-wait_for 5000 '[ "$(region c "$copy_x" "$copy_y" "$copy_w" "$copy_h")" != "$before" ]' || fail "setup: no Copy Code button"
+act=(keys c type --delay 2 "$address")
+after c "typing the address" "${hint[@]}"
+act=(keys c key Return)
+after c "Start New Vault" "$copy_x" "$copy_y" "$copy_w" "$copy_h"
+[ -e "$work/c/sync.json" ] || fail "setup: Start New Vault wrote no sync.json"
 DISPLAY=${display[c]} xdotool mousemove --window "${window[c]}" $((copy_x + copy_w / 2)) $((copy_y + copy_h / 2)) click 1
 wait_for 5000 '[[ "$(clipboard c)" == "$address#bronze1-"* ]]' || fail "setup: Copy Code put no sync code on c's clipboard"
 code=$(clipboard c)
@@ -321,8 +329,10 @@ pass "setup: on c the menu's Sync… started a vault on $address, and Copy Code 
 hold_clipboard d "$code"
 wait_for 5000 '[ "$(clipboard d)" = "$code" ]' || fail "setup: the code did not reach d's clipboard"
 open_sheet d
-DISPLAY=${display[d]} xdotool key ctrl+v
-wait_for 5000 'DISPLAY=${display[d]} xdotool key Return; [ -e "$work/d/sync.json" ]' || fail "setup: pasting the code and Return did not join on d"
+act=(keys d key ctrl+v)
+after d "pasting the code" "${hint[@]}"
+keys d key Return
+wait_for 5000 '[ -e "$work/d/sync.json" ]' || fail "setup: Join Vault wrote no sync.json on d"
 grep -qF "${code#*#}" "$work/d/sync.json" || fail "setup: d joined with a different key"
 wait_for 30000 'both_hold "Typed on c before setup" && both_hold "Typed on d before setup"' \
   || fail "setup: c and d did not merge: c $(outline c), d $(outline d)"
