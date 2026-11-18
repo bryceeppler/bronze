@@ -12,5 +12,5 @@ ENV BRONZE_SYNC_LISTEN=0.0.0.0:8787 BRONZE_SYNC_DATA=/data
 VOLUME /data
 EXPOSE 8787
 USER 65532:65532
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --start-interval=1s CMD ["bronze-sync", "health"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --start-interval=1s CMD ["bronze-sync", "health"]
 ENTRYPOINT ["bronze-sync"]

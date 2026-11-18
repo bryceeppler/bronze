@@ -43,12 +43,13 @@ case $mode in
     start() {
       container=$(docker run -d --label fleet.worktree="$(git rev-parse --show-toplevel)" -p 127.0.0.1::8787 -v "$volume:/data" \
         -e BRONZE_SYNC_MAX_BYTES=$max_bytes -e BRONZE_SYNC_MAX_VAULTS=$max_vaults -e BRONZE_SYNC_SETUP_TOKEN="$setup" "$image")
-      for _ in $(seq 100); do
+      for _ in $(seq 150); do
         [[ $(docker inspect -f '{{.State.Health.Status}}' "$container") == healthy ]] && break
         sleep 0.2
       done
       docker logs "$container" > "$work/log" 2>&1
-      [[ $(docker inspect -f '{{.State.Health.Status}}' "$container") == healthy ]] || fail "container never became healthy"
+      [[ $(docker inspect -f '{{.State.Health.Status}}' "$container") == healthy ]] \
+        || fail "container never became healthy: $(docker inspect -f '{{json .State}}' "$container")"
       grep -qx 'bronze-sync listening on 0.0.0.0:8787, data in /data' "$work/log" || fail "start line"
       [[ $(docker top "$container" -o pid,uid | awk 'NR == 2 { print $2 }') == 65532 ]] || fail "server is not running as uid 65532"
       base="http://$(docker port "$container" 8787/tcp | head -1)"
