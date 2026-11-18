@@ -57,7 +57,7 @@ impl TryFrom<String> for Rank {
 
     fn try_from(text: String) -> Result<Rank, &'static str> {
         const GROUPS: &str = "a rank is groups of 16 hex digits";
-        if !text.is_ascii() || text.len() % 16 != 0 {
+        if !text.is_ascii() || !text.len().is_multiple_of(16) {
             return Err(GROUPS);
         }
         let digits = (0..text.len())
