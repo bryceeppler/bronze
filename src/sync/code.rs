@@ -22,12 +22,14 @@ pub enum SetupRefusal {
 }
 
 impl SyncCode {
+    #[cfg_attr(not(test), expect(dead_code, reason = "the setup screen shows the sync code"))]
     pub fn reveal(&self) -> String {
         format!("{}#{}", self.server, self.key.reveal())
     }
 }
 
 impl Setup {
+    #[cfg_attr(not(test), expect(dead_code, reason = "the setup screen reads its field with this"))]
     pub fn parse(text: &str) -> Result<Setup, SetupRefusal> {
         Ok(match text.split_once('#') {
             None => Setup::Start(ServerAddress::parse(text)?),

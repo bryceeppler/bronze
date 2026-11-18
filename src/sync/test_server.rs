@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use super::ServerAddress;
+use super::address::ServerAddress;
 
 pub struct TestServer {
     child: Option<Child>,

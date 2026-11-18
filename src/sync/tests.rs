@@ -5,6 +5,7 @@ use bronze_wire::{Precondition, Version, prefer_wait, vault_path};
 
 use super::remote::{Pulled, Pushed, Remote};
 use super::seal::Seal;
+use super::status::{Offline, Refusal};
 use super::test_server::TestServer;
 use super::*;
 use crate::board::{Board, NoteId, Place, Scope};

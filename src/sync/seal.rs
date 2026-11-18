@@ -144,7 +144,7 @@ impl From<Snapshot> for Replica {
 mod tests {
     use super::*;
     use crate::board::{Board, DeviceId};
-    use crate::sync::SyncKey;
+    use crate::sync::key::SyncKey;
 
     const KEY: &str = "bronze1-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f-630dcd29";
     const FORMAT_1: &[u8] = include_bytes!("fixtures/sealed-v1.bin");
