@@ -58,7 +58,7 @@ declare -A display=([a]=":$base" [b]=":$((base + 1))") window=() app=()
 launch() {
   local name=$1
   shift
-  DISPLAY=${display[$name]} "$@" target/debug/bronze --data "$work/$name" > "$work/$name.log" 2>&1 &
+  DISPLAY=${display[$name]} "$@" target/debug/bronze --data "$work/$name" >> "$work/$name.log" 2>&1 &
   app[$name]=$!
   pids+=($!)
   wait_for 20000 'window[$name]=$(DISPLAY=${display[$name]} xdotool search --onlyvisible --name "^Bronze$" 2> /dev/null | head -1) && [ -n "${window[$name]}" ]' \
@@ -67,7 +67,10 @@ launch() {
 
 quit() { kill "${app[$1]}"; wait "${app[$1]}" 2> /dev/null || true; }
 
+typing() { echo "$((${EPOCHREALTIME/./} / 1000)) $1 $2" >> "$work/typed.log"; }
+
 type_note() {
+  typing "$1" "$2"
   DISPLAY=${display[$1]} xdotool windowfocus --sync "${window[$1]}" type --delay 2 "$2"
   DISPLAY=${display[$1]} xdotool key Return
 }
@@ -117,6 +120,7 @@ pressed=()
 synced=()
 for n in $(seq $live); do
   text="Live edit $n from a"
+  typing a "$text"
   DISPLAY=${display[a]} xdotool windowfocus --sync "${window[a]}" type --delay 2 "$text"
   t0=$(now_ms)
   DISPLAY=${display[a]} xdotool key Return
