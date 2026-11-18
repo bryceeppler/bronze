@@ -57,8 +57,8 @@ async fn read(State(app): State<App>, poll: Poll) -> Result<Response, Reject> {
         let Caller { vault, token } = poll.caller.clone();
         match app.blocking(move |store, _| store.read(&vault, &token, poll.seen)).await? {
             Read::Changed { version, bytes } => {
-                return Ok((StatusCode::OK, [(ETAG, version.etag())], [(header::CONTENT_TYPE, "application/octet-stream")], bytes)
-                    .into_response());
+                let headers = [(ETAG, version.etag()), (header::CONTENT_TYPE, "application/octet-stream".to_owned())];
+                return Ok((StatusCode::OK, headers, bytes).into_response());
             }
             Read::Unchanged(version) => {
                 let woke = tokio::select! {
@@ -126,7 +126,10 @@ impl FromRequestParts<App> for Poll {
 
     async fn from_request_parts(parts: &mut Parts, app: &App) -> Result<Self, Reject> {
         let caller = Caller::from_request_parts(parts, app).await?;
-        let seen = text(&parts.headers, header::IF_NONE_MATCH).map(Version::from_etag).transpose().map_err(Reject::Malformed)?;
+        let seen = text(&parts.headers, header::IF_NONE_MATCH)
+            .map(Version::from_etag)
+            .transpose()
+            .map_err(Reject::Malformed)?;
         let wait = match seen {
             Some(_) => parts
                 .headers
@@ -147,10 +150,12 @@ impl FromRequest<App> for Write {
     async fn from_request(request: Request, app: &App) -> Result<Self, Reject> {
         let (mut parts, body) = request.into_parts();
         let Caller { vault, token } = Caller::from_request_parts(&mut parts, app).await?;
-        let precondition =
-            Precondition::from_headers(text(&parts.headers, header::IF_MATCH), text(&parts.headers, header::IF_NONE_MATCH))
-                .map_err(Reject::Malformed)?
-                .ok_or(Reject::PreconditionRequired)?;
+        let precondition = Precondition::from_headers(
+            text(&parts.headers, header::IF_MATCH),
+            text(&parts.headers, header::IF_NONE_MATCH),
+        )
+        .map_err(Reject::Malformed)?
+        .ok_or(Reject::PreconditionRequired)?;
         let setup_token = parts.headers.get(bronze_wire::header::SETUP_TOKEN).map(|value| value.as_bytes().to_vec());
         let bytes = Bytes::from_request(Request::from_parts(parts, body), app).await.map_err(|rejection| {
             match rejection.status() {
@@ -185,7 +190,9 @@ impl IntoResponse for Reject {
             Self::SetupTokenRefused => {
                 (StatusCode::FORBIDDEN, "creating a vault needs the setup token").into_response()
             }
-            Self::VaultLimitReached => (StatusCode::FORBIDDEN, "this server holds all the vaults it allows").into_response(),
+            Self::VaultLimitReached => {
+                (StatusCode::FORBIDDEN, "this server holds all the vaults it allows").into_response()
+            }
             Self::Internal(error) => {
                 eprintln!("bronze-sync: {error}");
                 StatusCode::INTERNAL_SERVER_ERROR.into_response()

@@ -33,11 +33,16 @@ impl Server {
     }
 
     fn vault(&self) -> Vault {
-        Vault { url: format!("{}/v1/vaults/{}", self.base, random_hex()), token: random_hex(), client: Client::new() }
+        self.open(&random_hex(), random_hex())
+    }
+
+    fn open(&self, id: &str, token: String) -> Vault {
+        Vault { id: id.to_owned(), url: format!("{}/v1/vaults/{id}", self.base), token, client: Client::new() }
     }
 }
 
 struct Vault {
+    id: String,
     url: String,
     token: String,
     client: Client,
@@ -139,7 +144,7 @@ async fn a_wrong_or_missing_token_is_401() {
     let (_data, server) = started(Limits::default()).await;
     let vault = server.vault();
     let first = vault.create("one").await;
-    let intruder = Vault { token: random_hex(), url: vault.url.clone(), client: Client::new() };
+    let intruder = server.open(&vault.id, random_hex());
 
     let read = intruder.get().send().await.unwrap();
     assert_eq!(read.status(), StatusCode::UNAUTHORIZED);
@@ -158,7 +163,7 @@ async fn an_unknown_vault_is_404_and_replacing_it_is_412() {
     assert_eq!(vault.get().send().await.unwrap().status(), StatusCode::NOT_FOUND);
     let replace = vault.replace("\"00000000000000000000000000000000\"", "one").await;
     assert_eq!((replace.status(), etag(&replace)), (StatusCode::PRECONDITION_FAILED, None));
-    let uppercase = Vault { url: vault.url.to_uppercase(), token: vault.token.clone(), client: Client::new() };
+    let uppercase = server.open(&vault.id.to_uppercase(), vault.token.clone());
     assert_eq!(uppercase.get().send().await.unwrap().status(), StatusCode::NOT_FOUND);
     server.stop().await;
 }
@@ -221,7 +226,7 @@ async fn bytes_survive_a_restart() {
     server.stop().await;
 
     let server = Server::start(data.path(), Limits::default()).await;
-    let vault = Vault { url: vault.url.replace(&vault.url[..vault.url.find("/v1").unwrap()], &server.base), ..vault };
+    let vault = server.open(&vault.id, vault.token);
     assert_eq!(vault.body().await, (Some(version), "kept".to_owned()));
     server.stop().await;
 }

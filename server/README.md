@@ -6,8 +6,8 @@ It stores one sealed board per vault in SQLite and never reads a note.
 ## Run
 
 ```sh
-cargo build --release -p bronze-sync
-BRONZE_SYNC_DATA=./sync-data ./target/release/bronze-sync
+cargo build --release --manifest-path server/Cargo.toml
+BRONZE_SYNC_DATA=./sync-data ./server/target/release/bronze-sync
 ```
 
 ```sh
@@ -26,6 +26,13 @@ docker run -d -p 127.0.0.1:8787:8787 -v bronze-sync:/data bronze-sync
 | `BRONZE_SYNC_MAX_BYTES` | `8388608` | Largest sealed board, in bytes |
 | `BRONZE_SYNC_MAX_VAULTS` | `100` | Most vaults this server creates |
 | `BRONZE_SYNC_SETUP_TOKEN` | unset | When set, creating a vault needs it in the `Bronze-Setup-Token` header |
+
+## Check
+
+```sh
+./scripts/server-check.sh binary         # builds the binary and drives it with curl
+./scripts/server-check.sh docker <image> # the same cases against a built image
+```
 
 The server speaks plain HTTP.
 Put it behind a reverse proxy for TLS.
