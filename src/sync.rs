@@ -100,14 +100,17 @@ impl Running {
     fn start(code: SyncCode, local: &Replica, wake: impl Fn() + Send + 'static) -> Running {
         let (events, inbox) = mpsc::channel();
         let (deliver, deliveries) = mpsc::channel();
-        let engine = Engine::new(&code, local.clone(), events.clone(), move |delivery| {
-            if deliver.send(delivery).is_ok() {
-                wake();
-            }
-        });
+        let (engine_code, local, engine_events) = (code.clone(), local.clone(), events.clone());
         thread::Builder::new()
             .name("bronze-sync".into())
-            .spawn(move || engine.run(&inbox))
+            .spawn(move || {
+                let deliver = move |delivery| {
+                    if deliver.send(delivery).is_ok() {
+                        wake();
+                    }
+                };
+                Engine::new(&engine_code, local, engine_events, deliver).run(&inbox);
+            })
             .expect("spawn the sync thread");
         Running { code, events, deliveries, status: Status::Connecting }
     }
