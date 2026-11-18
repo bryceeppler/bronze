@@ -1,0 +1,5 @@
+{"events": [
+  {"t": 0.4, "type": "tap", "key": "search"},
+  {"t": 0.8, "type": "type", "text": "plain", "every": 0.12},
+  {"t": 3.0, "type": "mark", "name": "end"}
+]}
