@@ -88,13 +88,8 @@ fn notes(list: &[(&str, bool)]) -> Vec<(String, bool)> {
     list.iter().map(|&(text, done)| (text.to_owned(), done)).collect()
 }
 
-#[test]
-fn a_version_1_file_written_by_main_opens_with_the_same_outline_and_is_kept_beside_it() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("notes.json"), WRITTEN_BY_MAIN).unwrap();
-
-    let (board, store) = open::<Board>(dir.path());
-    let expected = vec![
+fn written_by_main() -> Outline {
+    vec![
         (None, notes(&[("Loose thought", true), ("Second loose note\nwith a second line", false)])),
         (
             Some("Research".to_owned()),
@@ -105,8 +100,28 @@ fn a_version_1_file_written_by_main_opens_with_the_same_outline_and_is_kept_besi
             ]),
         ),
         (Some("Errands".to_owned()), notes(&[("Buy oat milk", false)])),
-    ];
-    assert_eq!(outline(&board), (expected, Some("Research".to_owned())));
+    ]
+}
+
+fn opened(contents: &str) -> Board {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("notes.json"), contents).unwrap();
+    open::<Board>(dir.path()).0
+}
+
+fn joined(into: &Board, from: &Board) -> Board {
+    let mut board = into.clone();
+    board.join(from.replica());
+    board
+}
+
+#[test]
+fn a_version_1_file_written_by_main_opens_with_the_same_outline_and_is_kept_beside_it() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("notes.json"), WRITTEN_BY_MAIN).unwrap();
+
+    let (board, store) = open::<Board>(dir.path());
+    assert_eq!(outline(&board), (written_by_main(), Some("Research".to_owned())));
     assert_eq!(fs::read_to_string(dir.path().join("notes.v1.json")).unwrap(), WRITTEN_BY_MAIN);
 
     store.save(&board);
@@ -115,6 +130,52 @@ fn a_version_1_file_written_by_main_opens_with_the_same_outline_and_is_kept_besi
     assert_eq!(outline(&reloaded), outline(&board));
     assert_eq!(reloaded.replica(), board.replica());
     assert_eq!(fs::read_to_string(dir.path().join("notes.v1.json")).unwrap(), WRITTEN_BY_MAIN);
+}
+
+#[test]
+fn version_1_ids_come_from_the_content_and_never_change() {
+    let board = opened(WRITTEN_BY_MAIN);
+    let id = |text: &str| board.notes().find(|n| n.text == text).map(|n| n.id.to_string());
+    assert_eq!(board.sections()[0].id.to_string(), "312e463abdf97b3515b640af421a119c");
+    assert_eq!(id("Read the **paper**").as_deref(), Some("204a316690cdd8b641b6151ebf2523f4"));
+    assert_eq!(id("Loose thought").as_deref(), Some("d7c4235a338b8d2320210545b5794e73"));
+}
+
+#[test]
+fn two_machines_that_open_the_same_version_1_file_show_each_note_once_after_joining() {
+    let (mac, linux) = (opened(WRITTEN_BY_MAIN), opened(WRITTEN_BY_MAIN));
+    assert_ne!(mac.device(), linux.device());
+    assert_eq!(outline(&joined(&mac, &linux)).0, written_by_main());
+    assert_eq!(outline(&joined(&linux, &mac)).0, written_by_main());
+}
+
+#[test]
+fn identical_notes_in_one_version_1_list_stay_two_notes() {
+    let file = r#"{"version": 1, "active": null,
+        "loose": [{"text": "same"}, {"text": "same", "done": true}],
+        "sections": [{"name": "Twice", "notes": [{"text": "same"}]}, {"name": "twice", "notes": [{"text": "same"}]}]}"#;
+    let expected = vec![
+        (None, notes(&[("same", false), ("same", true)])),
+        (Some("Twice".to_owned()), notes(&[("same", false); 2])),
+    ];
+    let (mac, linux) = (opened(file), opened(file));
+    assert_eq!(outline(&mac).0, expected);
+    assert_eq!(outline(&joined(&mac, &linux)).0, expected);
+}
+
+#[test]
+fn a_check_made_after_opening_a_version_1_file_wins_over_a_later_open_elsewhere() {
+    let mut mac = opened(WRITTEN_BY_MAIN);
+    let paper = mac.notes().find(|n| n.text == "Read the **paper**").map(|n| n.id).unwrap();
+    mac.toggle(&[paper]);
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let mut linux = opened(WRITTEN_BY_MAIN);
+
+    mac.join(linux.replica());
+    linux.join(mac.replica());
+    for board in [&mac, &linux] {
+        assert!(board.notes().any(|n| n.id == paper && n.done));
+    }
 }
 
 #[test]

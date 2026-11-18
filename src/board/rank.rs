@@ -6,12 +6,17 @@ use serde::{Deserialize, Serialize};
 const OPEN: u128 = 1 << 64;
 const MIDDLE: u128 = 1 << 63;
 const STEP: u128 = 1 << 32;
+const SPREAD: u128 = 1 << 31;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(into = "String", try_from = "String")]
 pub struct Rank(Vec<u64>);
 
 impl Rank {
+    pub fn nth(n: u32) -> Rank {
+        Rank(vec![(MIDDLE + u128::from(n) * SPREAD) as u64])
+    }
+
     pub fn between(lo: Option<&Rank>, hi: Option<&Rank>, rng: &mut fastrand::Rng) -> Rank {
         let mut hi = hi.filter(|hi| lo.is_none_or(|lo| lo < *hi));
         let mut digits = Vec::new();

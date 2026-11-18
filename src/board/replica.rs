@@ -45,6 +45,28 @@ hex_id!(DeviceId, u64, 16);
 hex_id!(NoteId, u128, 32);
 hex_id!(SectionId, u128, 32);
 
+impl SectionId {
+    pub fn named(name: &str) -> SectionId {
+        SectionId(fnv1a(&[b"section", name.to_lowercase().as_bytes()]))
+    }
+}
+
+impl NoteId {
+    pub fn listed(section: Option<SectionId>, text: &str, occurrence: u64) -> NoteId {
+        let list = section.map(|id| id.0.to_le_bytes());
+        NoteId(fnv1a(&[b"note", list.as_ref().map_or(&[], |id| id), text.as_bytes(), &occurrence.to_le_bytes()]))
+    }
+}
+
+fn fnv1a(parts: &[&[u8]]) -> u128 {
+    const OFFSET: u128 = 0x6c62272e07bb014262b821756295c58d;
+    const PRIME: u128 = 0x0000000001000000000000000000013b;
+    parts
+        .iter()
+        .flat_map(|part| (part.len() as u64).to_le_bytes().into_iter().chain(part.iter().copied()))
+        .fold(OFFSET, |hash, byte| (hash ^ u128::from(byte)).wrapping_mul(PRIME))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Stamp {
     pub time: u64,

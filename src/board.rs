@@ -78,12 +78,6 @@ pub struct List<'a> {
     pub notes: &'a [Note],
 }
 
-pub struct Restored {
-    pub loose: Vec<(String, bool)>,
-    pub sections: Vec<(String, Vec<(String, bool)>)>,
-    pub active: Option<String>,
-}
-
 impl Default for Board {
     fn default() -> Board {
         Board::new(fastrand::Rng::new(), wall_clock)
@@ -110,26 +104,6 @@ impl Board {
         let mut board = Board { device, ..Board::default() };
         board.join(replica);
         board.active = active.and_then(|name| board.section_named(name)).map(|s| s.id);
-        board
-    }
-
-    pub fn restore(restored: Restored) -> Board {
-        let mut board = Board::default();
-        let mut lists = vec![(None, restored.loose)];
-        for (name, notes) in restored.sections {
-            lists.push((Some(board.open_section(&name)), notes));
-        }
-        let at = board.tick();
-        let mut last: HashMap<Option<SectionId>, Rank> = HashMap::new();
-        for (section, notes) in lists {
-            for (text, done) in notes {
-                let rank = Rank::between(last.get(&section), None, &mut board.rng);
-                board.add(text, done, Position { section, rank: rank.clone() }, at);
-                last.insert(section, rank);
-            }
-        }
-        board.project();
-        board.active = restored.active.and_then(|name| board.section_named(&name)).map(|s| s.id);
         board
     }
 

@@ -13,7 +13,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::board::{
-    Board, DeviceId, NoteId, NoteRecord, Position, Rank, Reg, Replica, Restored, Scope, SectionId, SectionRecord, Stamp,
+    Board, DeviceId, NoteId, NoteRecord, Position, Rank, Reg, Replica, Scope, SectionId, SectionRecord, Stamp,
 };
 use crate::prefs::{Frame, Prefs};
 
@@ -420,12 +420,36 @@ impl Document for Board {
 
     fn from_older(bytes: &[u8]) -> serde_json::Result<Board> {
         let file: V1Notes = body(bytes)?;
-        let notes = |entries: Vec<V1Note>| entries.into_iter().map(|n| (n.text, n.done)).collect();
-        Ok(Board::restore(Restored {
-            loose: notes(file.loose),
-            sections: file.sections.into_iter().map(|s| (s.name, notes(s.notes))).collect(),
-            active: file.active,
-        }))
+        let device = DeviceId::random(&mut fastrand::Rng::new());
+        let migrated = Stamp { time: 0, device };
+        let mut replica = Replica::default();
+        let mut lists = vec![(None, file.loose)];
+        for (order, section) in (0..).zip(file.sections) {
+            let id = SectionId::named(&section.name);
+            let name = Reg { value: section.name, at: migrated };
+            let created = Stamp { time: order, device };
+            replica.sections.entry(id).or_insert(SectionRecord::Live { name, created });
+            lists.push((Some(id), section.notes));
+        }
+        let mut placed: HashMap<Option<SectionId>, u32> = HashMap::new();
+        let mut copies: HashMap<(Option<SectionId>, String), u64> = HashMap::new();
+        for (section, notes) in lists {
+            for V1Note { text, done } in notes {
+                let occurrence = copies.entry((section, text.clone())).or_default();
+                let id = NoteId::listed(section, &text, *occurrence);
+                *occurrence += 1;
+                let order = placed.entry(section).or_default();
+                let place = Position { section, rank: Rank::nth(*order) };
+                *order += 1;
+                let record = NoteRecord::Live {
+                    text,
+                    done: Reg { value: done, at: migrated },
+                    place: Reg { value: place, at: migrated },
+                };
+                replica.notes.insert(id, record);
+            }
+        }
+        Ok(Board::load(device, &replica, file.active.as_deref()))
     }
 }
 
