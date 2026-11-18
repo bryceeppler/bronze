@@ -3,6 +3,7 @@ use std::time::Duration;
 use bronze_wire::{AuthToken, Precondition, VaultId, Version, prefer_wait, vault_path};
 use ureq::Agent;
 use ureq::http::{HeaderMap, header};
+use ureq::tls::{RootCerts, TlsConfig};
 
 use super::address::ServerAddress;
 use super::status::{Failure, Offline, Refusal};
@@ -40,6 +41,7 @@ impl Remote {
             .http_status_as_error(false)
             .max_redirects(0)
             .timeout_connect(Some(CONNECT))
+            .tls_config(TlsConfig::builder().root_certs(RootCerts::PlatformVerifier).build())
             .user_agent(concat!("bronze/", env!("CARGO_PKG_VERSION")))
             .build()
             .new_agent();
