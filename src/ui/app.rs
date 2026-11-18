@@ -7,11 +7,12 @@ use rune::{Mods, PointerPress, ShortcutError, TextEdit, Tx};
 use super::commands::{self, Global};
 use super::window::Window;
 use crate::board::{Board, Note, NoteId, Owner, Place, Scope, SectionId, Submitted};
-use crate::platform::Platform;
+use crate::platform::{Access, Platform};
 use crate::prefs::Prefs;
 use crate::store::Store;
 
 const NOTICE_SECONDS: f64 = 2.5;
+const ACCESS_RECHECK_SECONDS: f64 = 1.0;
 
 pub struct App {
     board: Board,
@@ -19,6 +20,8 @@ pub struct App {
     prefs: Prefs,
     preferences: Store<Prefs>,
     platform: Rc<dyn Platform>,
+    access: Access,
+    recheck_access_at: f64,
     window: Window,
     selections: (Sender<Option<String>>, Receiver<Option<String>>),
     pub panel: Panel,
@@ -37,6 +40,12 @@ pub struct Saved {
     pub notes: Store<Board>,
     pub prefs: Prefs,
     pub preferences: Store<Prefs>,
+}
+
+pub enum Notice<'a> {
+    NothingSelected,
+    NeedsAccess,
+    Unavailable(Global, &'a ShortcutError),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,6 +103,8 @@ impl App {
             notes: saved.notes,
             prefs: saved.prefs,
             preferences: saved.preferences,
+            access: platform.access(),
+            recheck_access_at: 0.0,
             platform,
             window,
             selections: mpsc::channel(),
@@ -124,6 +135,15 @@ impl App {
     fn set_prefs(&mut self, change: impl FnOnce(&mut Prefs)) {
         change(&mut self.prefs);
         self.preferences.save(&self.prefs);
+    }
+
+    pub fn use_platform(&mut self, platform: Rc<dyn Platform>) {
+        self.access = platform.access();
+        self.platform = platform;
+    }
+
+    pub fn ask_for_access(&self) {
+        self.platform.ask_for_access();
     }
 
     pub fn register_shortcuts(&mut self) {
@@ -166,6 +186,15 @@ impl App {
             self.nothing_selected_until = None;
             changed = true;
         }
+        if clock >= self.recheck_access_at {
+            let access = self.platform.access();
+            changed |= access != self.access;
+            self.access = access;
+            self.recheck_access_at = clock + ACCESS_RECHECK_SECONDS;
+        }
+        if self.access == Access::Missing {
+            tx.wake_at(self.recheck_access_at);
+        }
         changed
     }
 
@@ -184,16 +213,14 @@ impl App {
         }
     }
 
-    pub fn notice(&self) -> Option<String> {
+    pub fn notice(&self) -> Option<Notice<'_>> {
         if self.nothing_selected_until.is_some() {
-            return Some("Nothing is selected to capture".to_owned());
+            return Some(Notice::NothingSelected);
         }
-        let (global, error) = self.unavailable.first()?;
-        let (name, chord) = (global.name(), commands::label(global.chord()));
-        Some(match error {
-            ShortcutError::Conflict => format!("{name} {chord} is taken by another app"),
-            _ => format!("{name} {chord} is unavailable here"),
-        })
+        if self.access == Access::Missing {
+            return Some(Notice::NeedsAccess);
+        }
+        self.unavailable.first().map(|(global, error)| Notice::Unavailable(*global, error))
     }
 
     pub fn hide_panel(&mut self) {
@@ -451,6 +478,25 @@ impl App {
     pub fn drop(&mut self) {
         if let Some(Dragging { id, target: Some(place), .. }) = self.dragging.take() {
             self.edit(|board| board.move_note(id, place));
+        }
+    }
+}
+
+impl Notice<'_> {
+    pub fn text(&self) -> String {
+        match self {
+            Notice::NothingSelected => "Nothing is selected to capture".to_owned(),
+            Notice::NeedsAccess => {
+                "Bronze needs Accessibility access to capture selected text and to respond to double-tap Shift."
+                    .to_owned()
+            }
+            Notice::Unavailable(global, error) => {
+                let (name, chord) = (global.name(), commands::label(global.chord()));
+                match error {
+                    ShortcutError::Conflict => format!("{name} {chord} is taken by another app"),
+                    _ => format!("{name} {chord} is unavailable here"),
+                }
+            }
         }
     }
 }

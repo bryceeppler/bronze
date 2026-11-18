@@ -1,8 +1,11 @@
+use std::rc::Rc;
+
 use rune::{ShortcutError, TextEdit};
 
 use super::app::{App, Click, Overlay};
 use super::commands::Global;
 use crate::board::NoteId;
+use crate::platform::{Access, Fake};
 
 type Scene = (&'static str, fn(&mut App));
 
@@ -25,6 +28,12 @@ pub const SCENES: &[Scene] = &[
     ("shortcut-taken", |s| {
         notes(s);
         s.shortcut_unavailable(Global::Capture, ShortcutError::Conflict);
+    }),
+    ("needs-access", |s| {
+        notes(s);
+        let platform = Fake::default();
+        platform.set_access(Access::Missing);
+        s.use_platform(Rc::new(platform));
     }),
     ("menu", |s| {
         sections(s);

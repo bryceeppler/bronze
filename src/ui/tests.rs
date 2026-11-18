@@ -7,7 +7,7 @@ use super::app::{Panel as Shown, card_key};
 use super::commands::Global;
 use super::{App, Saved, Window, on_key, view};
 use crate::board::{Board, NoteId, Scope};
-use crate::platform::Fake;
+use crate::platform::{Access, Fake};
 use crate::prefs::Prefs;
 use crate::store::{self, Store};
 
@@ -19,16 +19,25 @@ struct Panel {
 
 impl Panel {
     fn new() -> Panel {
-        Panel::with(Saved {
-            board: Board::default(),
-            notes: Store::Memory,
-            prefs: Prefs::default(),
-            preferences: Store::Memory,
-        })
+        Panel::with(Panel::blank())
+    }
+
+    fn blank() -> Saved {
+        Saved { board: Board::default(), notes: Store::Memory, prefs: Prefs::default(), preferences: Store::Memory }
     }
 
     fn with(saved: Saved) -> Panel {
-        let platform = Rc::new(Fake::default());
+        Panel::on(saved, Fake::default())
+    }
+
+    fn lacking_access() -> Panel {
+        let platform = Fake::default();
+        platform.set_access(Access::Missing);
+        Panel::on(Panel::blank(), platform)
+    }
+
+    fn on(saved: Saved, platform: Fake) -> Panel {
+        let platform = Rc::new(platform);
         let unbound = rune::App::new(AppSpec::new("Bronze", (360.0, 640.0), || unreachable!(), view)).handle();
         let mut rt = Runtime::new(
             App::new(saved, platform.clone(), Window::new(unbound)),
@@ -434,4 +443,30 @@ fn reveal_notes_file_asks_the_system_to_show_the_notes_file() {
     p.click(p.at("more"), PLAIN);
     p.click(p.menu_item("Reveal Notes File"), PLAIN);
     assert_eq!(p.platform.revealed(), [dir.path().join("notes.json")]);
+}
+
+#[test]
+fn the_access_notice_asks_and_follows_access_as_it_is_granted_and_revoked() {
+    let mut p = Panel::lacking_access();
+    assert!(p.rt.find("notice").is_some());
+    p.click(p.at("open-settings"), PLAIN);
+    assert_eq!(p.platform.asked_for_access(), 1);
+
+    p.platform.set_access(Access::Granted);
+    settle_for(&mut p, 1.5);
+    assert!(p.rt.find("notice").is_none());
+
+    p.platform.set_access(Access::Missing);
+    settle_for(&mut p, 1.5);
+    assert!(p.rt.find("open-settings").is_some());
+}
+
+#[test]
+fn nothing_selected_shows_over_missing_access_and_gives_way_to_it() {
+    let mut p = Panel::lacking_access();
+    p.platform.select(None);
+    p.press(Global::Capture);
+    assert!(p.rt.find("open-settings").is_none());
+    settle_for(&mut p, 3.0);
+    assert!(p.rt.find("open-settings").is_some());
 }

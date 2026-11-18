@@ -14,7 +14,7 @@ mod window;
 use rune::{Cx, El, col};
 
 pub use app::{App, Saved};
-pub use commands::on_key;
+pub use commands::{Global, on_key};
 pub use scenes::SCENES;
 pub use window::Window;
 
