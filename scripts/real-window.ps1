@@ -55,6 +55,7 @@ public static class Desk
     [DllImport("kernel32.dll")] static extern bool GlobalUnlock(IntPtr memory);
     [DllImport("kernel32.dll")] static extern UIntPtr GlobalSize(IntPtr memory);
     [DllImport("kernel32.dll")] static extern IntPtr GlobalFree(IntPtr memory);
+    [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
 
     const uint CfUnicodeText = 13;
     static readonly uint[][] Convertible = { new uint[] { 13, 1, 7 }, new uint[] { 2, 8, 17 } };
@@ -119,6 +120,12 @@ public static class Desk
             return true;
         }, IntPtr.Zero);
         return found;
+    }
+
+    public static bool FullScreenInFront()
+    {
+        int state;
+        return SHQueryUserNotificationState(out state) == 0 && (state == 2 || state == 3);
     }
 
     public static Point Cursor() { Point point; GetCursorPos(out point); return point; }
@@ -257,6 +264,7 @@ public static class Desk
 
     public static EditWindow ShowEdit(string text) { return Show(() => new EditWindow(text)); }
     public static CopyWindow ShowCopy(string text) { return Show(() => new CopyWindow(text)); }
+    public static FullScreenWindow ShowFullScreen(string text) { return Show(() => new FullScreenWindow(text)); }
 
     static T Show<T>(Func<T> make) where T : Form
     {
@@ -334,12 +342,23 @@ public class CopyWindow : Form
         };
     }
 }
+
+public class FullScreenWindow : CopyWindow
+{
+    public FullScreenWindow(string copied) : base(copied)
+    {
+        Text = "Bronze test - full screen";
+        FormBorderStyle = FormBorderStyle.None;
+        Bounds = Screen.PrimaryScreen.Bounds;
+    }
+}
 '@
 
 $state = Join-Path $env:TEMP 'bronze-real-window.tick'
 $editText = 'Selected in a standard edit control'
 $copyText = 'Copied by an app that hides its text'
 $chordText = 'Copied after the chord was released'
+$fullText = 'Copied from a full-screen window by the chord'
 $finalText = 'Captured after the timelines that must not capture'
 
 function Pass([string]$what) { Write-Host "real window: $what" }
@@ -400,6 +419,7 @@ $cursor = [Desk]::Cursor()
 $bronze = $null
 $edit = $null
 $copy = $null
+$full = $null
 $code = 0
 
 try {
@@ -473,11 +493,34 @@ try {
     [Desk]::Play($edit.Handle, '+LShift 40 -LShift 60 +X 20 -X 60 +LShift 40 -LShift')
     Nothing 'Shift, a letter, then Shift'
 
+    $full = [Desk]::ShowFullScreen($fullText)
+    Focus $full 'the full-screen window'
+    if (-not (WaitFor { [Desk]::FullScreenInFront() })) { Fail 'the shell never reported the test window as a full-screen app' }
+    [Desk]::WriteClipboard([IntPtr]::Zero, 'clipboard before the full-screen chord', $null)
+    [Desk]::Play($full.Handle, '+LShift 40 -LShift 120 +LShift 40 -LShift')
+    Nothing 'a double tap over a full-screen app'
+    if ($full.Copies -ne 0) { Fail 'the double tap pressed Ctrl+Insert in the full-screen app' }
+    Focus $full 'the full-screen window'
+    [Desk]::Play($full.Handle, '+RShift 40 +LShift 60 -LShift 30 -RShift')
+    Start-Sleep -Milliseconds 1000
+    if (-not [Desk]::IsWindowVisible($panel)) { Fail 'Right Shift + Left Shift hid Bronze over a full-screen app' }
+    Pass 'Right Shift + Left Shift over a full-screen app left Bronze shown'
+    Focus $full 'the full-screen window'
+    [Desk]::Play($full.Handle, '+Ctrl 60 +Alt 60 +C 50 -C 80 -Alt 80 -Ctrl')
+    Captured $fullText 'PressedCopy' 'ctrl+alt+c over a full-screen app'
+    Start-Sleep -Milliseconds 600
+    if ($full.Copies -ne 1) { Fail "the full-screen app saw $($full.Copies) Ctrl+Insert presses, not 1" }
+    if ([Desk]::ClipboardText() -ne 'clipboard before the full-screen chord') { Fail 'the full-screen chord capture did not put the clipboard back' }
+    Pass 'ctrl+alt+c over a full-screen app still captured via PressedCopy and put the clipboard back'
+    [Desk]::Close($full)
+    $full = $null
+    if (-not (WaitFor { -not [Desk]::FullScreenInFront() })) { Fail 'the shell still reports a full-screen app after closing the test window' }
+
     $edit.SelectText($finalText)
     Focus $edit 'the edit window'
     [Desk]::Play($edit.Handle, '+LShift 40 -LShift 120 +LShift 40 -LShift')
-    Captured $finalText 'FocusedApp' 'a clean double tap after the timelines'
-    Pass 'and a clean double tap afterwards still captured'
+    Captured $finalText 'FocusedApp' 'a clean double tap after the timelines and the full-screen app'
+    Pass 'and once the full-screen app closed, a clean double tap captured again'
 } catch {
     $failure = $_.Exception
     while ($failure.InnerException) { $failure = $failure.InnerException }
@@ -485,6 +528,7 @@ try {
     if (Test-Path $log) { Get-Content $log | ForEach-Object { Write-Host "  $_" } }
     $code = 1
 } finally {
+    [Desk]::Close($full)
     [Desk]::Close($copy)
     [Desk]::Close($edit)
     if ($bronze) { Stop-Process -Id $bronze.Id -Force -ErrorAction SilentlyContinue; $bronze.WaitForExit(5000) | Out-Null }

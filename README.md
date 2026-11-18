@@ -72,7 +72,7 @@ Ctrl+Insert copies like Ctrl+C in standard Windows controls, browsers, Electron 
 ./scripts/real-window.sh  # a real window under Xvfb: capture, show and hide, remembered position
 ```
 
-On Windows, `scripts\real-window.ps1` drives real windows with injected keys: both capture paths, the chord held like a person holds it, show and hide, and the timelines that must not capture.
+On Windows, `scripts\real-window.ps1` drives real windows with injected keys: both capture paths, the chord held like a person holds it, show and hide, the timelines that must not capture, and the gestures over a full-screen app.
 It sends real key presses to the desktop, so it refuses to start while the session is locked or was used in the last 3 minutes unless you pass `-Force`.
 
 Renders and element trees land in `out/`.
