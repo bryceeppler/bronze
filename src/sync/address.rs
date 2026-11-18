@@ -23,14 +23,23 @@ impl ServerAddress {
         if host.is_empty() || authority.as_str().contains('@') || uri.query().is_some() {
             return Err(AddressRefusal::NotAddress);
         }
-        let scheme = uri.scheme_str().unwrap_or_default().to_ascii_lowercase();
+        let scheme = uri.scheme_str().ok_or(AddressRefusal::NotAddress)?.to_ascii_lowercase();
         match scheme.as_str() {
             "https" => {}
             "http" if matches!(host.as_str(), "localhost" | "127.0.0.1") => {}
             "http" => return Err(AddressRefusal::NotSecure),
             _ => return Err(AddressRefusal::NotAddress),
         }
-        let port = authority.port_u16().map(|port| format!(":{port}")).unwrap_or_default();
+        let port = match &authority.as_str()[authority.host().len()..] {
+            "" => String::new(),
+            typed => typed
+                .strip_prefix(':')
+                .filter(|digits| digits.bytes().all(|digit| digit.is_ascii_digit()))
+                .and_then(|digits| digits.parse::<u16>().ok())
+                .filter(|port| *port > 0)
+                .map(|port| format!(":{port}"))
+                .ok_or(AddressRefusal::NotAddress)?,
+        };
         Ok(ServerAddress(format!("{scheme}://{host}{port}{}", uri.path().trim_end_matches('/'))))
     }
 
@@ -48,6 +57,8 @@ impl fmt::Display for ServerAddress {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sync::Setup;
+    use crate::sync::code::SetupRefusal;
 
     fn parsed(text: &str) -> Result<String, AddressRefusal> {
         ServerAddress::parse(text).map(|address| address.to_string())
@@ -86,6 +97,7 @@ mod tests {
             "https://me@sync.example.com",
             "https://me:secret@sync.example.com",
             "https://sync.example.com/?vault=1",
+            "https://sync.example.com/?",
             "https://sync.example.com/#key",
             "https://sync example.com",
             "sync.example.com",
@@ -93,6 +105,34 @@ mod tests {
             "bronze1-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f-630dcd29",
         ] {
             assert_eq!(parsed(text), Err(AddressRefusal::NotAddress), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_port_that_is_not_1_to_65535_is_refused_never_dropped() {
+        const KEY: &str = "bronze1-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f-630dcd29";
+        for text in [
+            "https://sync.example.com:65536",
+            "https://sync.example.com:abc",
+            "https://sync.example.com:",
+            "https://sync.example.com:0",
+            "https://sync.example.com:-1",
+            "https://sync.example.com:443x/bronze",
+            "https://sync.example.com:+443",
+            "https://[2001:db8::1]:99999",
+            "https://[2001:db8::1]:",
+            "http://localhost:65536",
+        ] {
+            assert_eq!(parsed(text), Err(AddressRefusal::NotAddress), "{text:?}");
+            let code = format!("{text}#{KEY}");
+            assert_eq!(Setup::parse(&code), Err(SetupRefusal::NotAddress), "{code:?}");
+        }
+        for (text, address) in [
+            ("https://sync.example.com:1", "https://sync.example.com:1"),
+            ("https://sync.example.com:65535/bronze", "https://sync.example.com:65535/bronze"),
+            ("https://[2001:db8::1]:443", "https://[2001:db8::1]:443"),
+        ] {
+            assert_eq!(parsed(text).as_deref(), Ok(address), "{text:?}");
         }
     }
 
