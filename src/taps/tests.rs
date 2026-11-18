@@ -79,3 +79,13 @@ fn a_right_shift_event_cancels_a_tap_in_progress() {
 fn a_double_tap_of_right_shift_fires_nothing() {
     assert_eq!(run(&[(0, RIGHT_DOWN), (60, RIGHT_UP), (150, RIGHT_DOWN), (210, RIGHT_UP)]), []);
 }
+
+#[test]
+fn rolling_from_one_shift_to_the_other_while_typing_capitals_fires_nothing() {
+    for (first, second, first_up, second_up) in
+        [(RIGHT_DOWN, LEFT_DOWN, RIGHT_UP, LEFT_UP), (LEFT_DOWN, RIGHT_DOWN, LEFT_UP, RIGHT_UP)]
+    {
+        let fired = run(&[(0, first), (40, OTHER), (70, second), (90, first_up), (120, OTHER), (160, second_up)]);
+        assert_eq!(fired, []);
+    }
+}
