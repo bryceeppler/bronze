@@ -37,6 +37,8 @@ public static class Desk
     [DllImport("user32.dll")] static extern bool EnumWindows(EachWindow each, IntPtr data);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int length);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int how);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder name, int length);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point point);
@@ -131,6 +133,19 @@ public static class Desk
     public static Point Cursor() { Point point; GetCursorPos(out point); return point; }
     public static void MoveCursor(Point point) { SetCursorPos(point.X, point.Y); }
     public static IntPtr WindowAt(Point point) { return GetAncestor(WindowFromPoint(point), 2); }
+
+    public static string Describe(IntPtr window)
+    {
+        if (window == IntPtr.Zero) return "no window";
+        var kind = new StringBuilder(256);
+        GetClassName(window, kind, kind.Capacity);
+        uint process;
+        GetWindowThreadProcessId(window, out process);
+        string name;
+        try { name = System.Diagnostics.Process.GetProcessById((int)process).ProcessName; }
+        catch (ArgumentException) { name = "an exited process"; }
+        return kind + " of " + name;
+    }
 
     static readonly Dictionary<string, ushort> KeyCodes = new Dictionary<string, ushort>
     {
@@ -273,13 +288,15 @@ public static class Desk
         var thread = new Thread(() =>
         {
             form = make();
-            form.Shown += (sender, args) => shown.Set();
+            // Windows applies the launcher's show state, such as Start-Process -WindowStyle Hidden, to a process's first ShowWindow call.
+            form.Shown += (sender, args) => { ShowWindow(form.Handle, 1); shown.Set(); };
             Application.Run(form);
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.IsBackground = true;
         thread.Start();
         if (!shown.WaitOne(10000)) throw new InvalidOperationException("a test window never showed");
+        if (!IsWindowVisible(form.Handle)) throw new InvalidOperationException("the window '" + form.Text + "' showed but is not visible");
         return form;
     }
 
@@ -478,7 +495,8 @@ try {
     Focus $edit 'the edit window'
     $blank = $edit.Blank
     [Desk]::MoveCursor($blank)
-    if ([Desk]::WindowAt($blank) -ne $edit.Handle) { Fail 'the edit window is not under the cursor for the Shift-clicks' }
+    $under = [Desk]::WindowAt($blank)
+    if ($under -ne $edit.Handle) { Fail "the edit window is not under the cursor for the Shift-clicks, $([Desk]::Describe($under)) is" }
     [Desk]::Play($edit.Handle, '+LShift 30 click 30 -LShift 70 +LShift 30 click 30 -LShift')
     Nothing 'Shift-click twice'
 
