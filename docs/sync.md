@@ -49,7 +49,8 @@ The server stores the SHA-256 of the token, not the token, and compares it in co
 Neither the vault id nor the token reveals the key or the encryption key.
 
 Each machine keeps the server address and the key in `sync.json` in its notes folder, written with mode `0600` on Unix.
-Removing that file, or choosing **Stop Syncing**, turns sync off.
+Choosing **Stop Syncing** turns sync off at once and removes that file.
+Removing the file by hand turns sync off the next time Bronze starts; a running Bronze keeps syncing until then.
 
 ## The sealed snapshot
 
@@ -105,12 +106,15 @@ The server speaks plain HTTP and leaves TLS to a reverse proxy.
 | `PUT /v1/vaults/{vault}` with `If-None-Match: *` | `201` with the new `ETag`; `412` when the vault exists; `403` when the server holds all the vaults it allows |
 | `PUT` with neither header | `428` |
 | `PUT` larger than `BRONZE_SYNC_MAX_BYTES` | `413` |
-| a malformed vault id, token or header | `400` |
+| a malformed vault id | `404` |
+| a missing or malformed token | `401` |
+| a malformed `If-Match`, `If-None-Match` or `ETag` value, or both precondition headers at once | `400` |
 
 - `{vault}` and the token are 64 lowercase hex characters.
 - A version is 32 lowercase hex characters in a strong `ETag`, such as `"e401989c3a03b182322423abeca307c0"`.
   It is random on every write, never a counter, so a restored server never reuses a version a machine has already seen.
-- The wait is capped at 55 seconds.
+- The server caps the wait at 55 seconds.
+  Bronze asks for 25, to stay under the idle timeout of common proxies.
 - A `2xx` answer to a `PUT` means the snapshot is on disk.
 - The body of a `403` is a sentence for a person, and Bronze shows it as the server's reason.
 
@@ -122,7 +126,7 @@ One background thread per Bronze does this:
 2. Decrypt it and merge it into the local board.
 3. If the merged board differs from the server's copy, seal it and upload it with `If-Match`, or with `If-None-Match: *` when there is no vault yet.
    A `412` means another machine uploaded first, so go back to step 1.
-4. If they are the same, wait on the server with `If-None-Match` and `Prefer: wait=55`, and go back to step 3 at once when you edit something.
+4. If they are the same, wait on the server with `If-None-Match` and `Prefer: wait=25`, and go back to step 3 at once when you edit something.
 
 After a failure it retries after 1 second, doubling up to 60 seconds, and an edit retries at once.
 Starting a new vault and joining one are the same operation: the only difference is that starting makes a new key.

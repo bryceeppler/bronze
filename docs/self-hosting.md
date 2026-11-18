@@ -138,7 +138,7 @@ Bronze trusts the certificates your operating system trusts.
 A server with a certificate from your own certificate authority works once that authority is installed on each machine.
 
 If you use another proxy, give it two settings that Caddy has by default.
-Requests wait up to 55 seconds for a change, so allow responses to take at least 60 seconds.
+Requests wait for a change, 25 seconds from Bronze and at most 55, so allow responses to take at least 60 seconds.
 Request bodies can be as large as `BRONZE_SYNC_MAX_BYTES`, so do not cap them lower.
 In nginx those are `proxy_read_timeout 75s;` and `client_max_body_size 8m;`.
 
