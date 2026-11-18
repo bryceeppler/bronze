@@ -134,6 +134,9 @@ curl https://sync.example.com/health
 
 Your server address in Bronze is then `https://sync.example.com`.
 
+Bronze trusts the certificates your operating system trusts.
+A server with a certificate from your own certificate authority works once that authority is installed on each machine.
+
 If you use another proxy, give it two settings that Caddy has by default.
 Requests wait up to 55 seconds for a change, so allow responses to take at least 60 seconds.
 Request bodies can be as large as `BRONZE_SYNC_MAX_BYTES`, so do not cap them lower.
