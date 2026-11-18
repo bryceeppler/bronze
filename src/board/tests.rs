@@ -314,3 +314,80 @@ fn a_note_added_to_a_section_removed_elsewhere_shows_as_loose() {
     assert_eq!(outline(&mac), outline(&linux));
     assert!(linux.active().is_none());
 }
+
+fn large_replica(rng: &mut fastrand::Rng) -> (DeviceId, Replica) {
+    let device = DeviceId::random(rng);
+    let at = Stamp { time: 1, device };
+    let mut replica = Replica::default();
+    let sections: Vec<SectionId> = (0..10)
+        .map(|n| {
+            let id = SectionId::random(rng);
+            let name = Reg { value: format!("Section {n}"), at };
+            replica.sections.insert(id, SectionRecord::Live { name, created: Stamp { time: n, device } });
+            id
+        })
+        .collect();
+    let mut rank = None;
+    for n in 0..2_000 {
+        let next = Rank::between(rank.as_ref(), None, rng);
+        let place = Position { section: (n % 2 == 0).then(|| sections[n / 2 % 10]), rank: next.clone() };
+        let text = format!("note {n}, about as long as a typical prompt someone queues");
+        let record = NoteRecord::Live { text, done: Reg { value: n % 3 == 0, at }, place: Reg { value: place, at } };
+        replica.notes.insert(NoteId::random(rng), record);
+        rank = Some(next);
+    }
+    for _ in 0..10_000 {
+        replica.notes.insert(NoteId::random(rng), NoteRecord::Removed);
+    }
+    (device, replica)
+}
+
+#[test]
+#[ignore = "a release-build timing: cargo test --release -- --ignored --nocapture joining_two_thousand"]
+fn joining_two_thousand_notes_and_ten_thousand_removed_ids_takes_under_16_ms() {
+    use std::time::{Duration, Instant};
+
+    let mut rng = fastrand::Rng::with_seed(16);
+    let (device, replica) = large_replica(&mut rng);
+    let mine = Board::load(device, &replica, None);
+    let mut theirs = Board::load(DeviceId::random(&mut rng), &replica, None);
+    theirs.capture("made on the other machine");
+    let some: Vec<NoteId> = theirs.notes().step_by(400).map(|n| n.id).collect();
+    theirs.toggle(&some[..2]);
+    theirs.move_note(some[2], Place::Before(some[3]));
+    theirs.remove(&some[4..]);
+    let shown = theirs.notes().count();
+    let theirs = theirs.replica().clone();
+    assert_eq!(theirs.notes.len(), 12_001);
+
+    let median = |mut times: Vec<Duration>| {
+        times.sort_unstable();
+        (times[times.len() / 2], times[0], times[times.len() - 1])
+    };
+    let mut medians = Vec::new();
+    for round in 0..5 {
+        let mut joins = Vec::new();
+        let mut first_syncs = Vec::new();
+        for _ in 0..40 {
+            let mut board = mine.clone();
+            let started = Instant::now();
+            let changed = board.join(&theirs);
+            joins.push(started.elapsed());
+            assert!(changed);
+            assert_eq!(board.notes().count(), shown);
+
+            let mut empty = Board::seeded(round);
+            let started = Instant::now();
+            empty.join(&theirs);
+            first_syncs.push(started.elapsed());
+            assert_eq!(empty.notes().count(), shown);
+        }
+        let (join, join_min, join_max) = median(joins);
+        let (first, first_min, first_max) = median(first_syncs);
+        println!(
+            "round {round}: join {join:.2?} ({join_min:.2?} to {join_max:.2?}), into an empty board {first:.2?} ({first_min:.2?} to {first_max:.2?})"
+        );
+        medians.push(join.max(first));
+    }
+    assert!(medians.iter().all(|m| *m < Duration::from_millis(16)), "medians {medians:?}");
+}
