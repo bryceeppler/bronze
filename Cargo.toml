@@ -12,6 +12,12 @@ directories = "6"
 fastrand = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+bronze-wire = { path = "wire" }
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
+hkdf = "0.13.0"
+sha2 = "0.11.1"
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc"] }
+getrandom = "0.4.3"
 
 [target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies]
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }

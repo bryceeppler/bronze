@@ -5,6 +5,7 @@ mod inline;
 mod platform;
 mod prefs;
 mod store;
+mod sync;
 mod taps;
 mod ui;
 
