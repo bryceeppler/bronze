@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-27.5 -27.5 879 879">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdfbf8"/>
+      <stop offset="1" stop-color="#ece4da"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.62" r="0.55">
+      <stop offset="0" stop-color="#d78c4b" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#d78c4b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="metal" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="420" y2="540">
+      <stop offset="0" stop-color="#e09d5e"/>
+      <stop offset="0.5" stop-color="#b8692f"/>
+      <stop offset="1" stop-color="#7a3f18"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.24"/>
+      <stop offset="0.35" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="drop" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000" flood-opacity="0.22"/>
+    </filter>
+    <clipPath id="body"><rect width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <g clip-path="url(#body)">
+    <rect width="824" height="824" fill="url(#tile)"/>
+    <rect width="824" height="824" fill="url(#glow)"/>
+  </g>
+  <rect x="2" y="2" width="820" height="820" rx="184" fill="none" stroke="#0000000f" stroke-width="4"/>
+  <g transform="translate(202 142)" fill-rule="evenodd">
+    <g fill="url(#metal)" filter="url(#drop)">
+      <path d="M40 0h220a120 120 0 0 1 0 240H40A40 40 0 0 1 0 200V40A40 40 0 0 1 40 0ZM110 100a20 20 0 0 0 0 40h150a20 20 0 0 0 0-40Z"/>
+      <path d="M40 280h250a130 130 0 0 1 0 260H40a40 40 0 0 1-40-40V320a40 40 0 0 1 40-40ZM110 390a20 20 0 0 0 0 40h190a20 20 0 0 0 0-40Z"/>
+    </g>
+    <g fill="url(#sheen)">
+      <path d="M40 0h220a120 120 0 0 1 0 240H40A40 40 0 0 1 0 200V40A40 40 0 0 1 40 0Z"/>
+      <path d="M40 280h250a130 130 0 0 1 0 260H40a40 40 0 0 1-40-40V320a40 40 0 0 1 40-40Z"/>
+    </g>
+  </g>
+</svg>

@@ -16,6 +16,8 @@ ICON = BRAND / "icon"
 ROOT = BRAND.parent.parent
 MAC_SIZES = (16, 32, 64, 128, 256, 512, 1024)
 WINDOWS_SIZES = (16, 24, 32, 48, 64, 128, 256)
+LINUX_SIZES = (16, 22, 24, 32, 48, 64, 128, 256, 512)
+LINUX_ID = "ca.bryce.bronze"
 ICNS_SLOTS = {"ic04": 16, "ic05": 32, "ic11": 32, "ic12": 64, "ic07": 128, "ic13": 256, "ic08": 256, "ic14": 512, "ic09": 512, "ic10": 1024}
 
 
@@ -52,7 +54,7 @@ def mac(tile: Image.Image, size: int) -> Image.Image:
     return canvas
 
 
-def windows(tile: Image.Image, size: int) -> Image.Image:
+def inset(tile: Image.Image, size: int) -> Image.Image:
     body = round(size * 15 / 16)
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     canvas.alpha_composite(tile.resize((body, body), Image.LANCZOS), ((size - body) // 2, (size - body) // 2))
@@ -72,17 +74,27 @@ def write_icns(images: dict[int, Image.Image], out: Path) -> None:
 def icons(variant: str, tmp: Path) -> None:
     tile = svg(ICON / f"icon-{variant}.svg", 2048, tmp / f"{variant}-tile.png")
     small = {16: svg(ICON / f"icon-{variant}-16.svg", 16, tmp / f"{variant}-16.png")}
-    small[24] = svg(ICON / f"icon-{variant}-32.svg", 24, tmp / f"{variant}-24.png")
-    small[32] = svg(ICON / f"icon-{variant}-32.svg", 32, tmp / f"{variant}-32.png")
+    for size in (22, 24, 32):
+        small[size] = svg(ICON / f"icon-{variant}-32.svg", size, tmp / f"{variant}-{size}.png")
 
     png = ICON / "png" / variant
     png.mkdir(parents=True, exist_ok=True)
     mac_images = {size: mac(tile, size) for size in MAC_SIZES}
     for size, image in mac_images.items():
         image.save(png / f"mac-{size}.png", optimize=True)
-    windows_images = {size: small.get(size) or windows(tile, size) for size in WINDOWS_SIZES}
+    windows_images = {size: small.get(size) or inset(tile, size) for size in WINDOWS_SIZES}
     for size, image in windows_images.items():
         image.save(png / f"windows-{size}.png", optimize=True)
+
+    hicolor = ICON / "linux" / variant / "hicolor"
+    for size in LINUX_SIZES:
+        apps = hicolor / f"{size}x{size}" / "apps"
+        apps.mkdir(parents=True, exist_ok=True)
+        (small.get(size) or inset(tile, size)).save(apps / f"{LINUX_ID}.png", optimize=True)
+    scalable = hicolor / "scalable" / "apps"
+    scalable.mkdir(parents=True, exist_ok=True)
+    source = (ICON / f"icon-{variant}.svg").read_text()
+    (scalable / f"{LINUX_ID}.svg").write_text(source.replace('viewBox="0 0 824 824"', 'viewBox="-27.5 -27.5 879 879"', 1))
 
     write_icns(mac_images, ICON / f"bronze-{variant}.icns")
     windows_images[256].save(ICON / f"bronze-{variant}.ico", sizes=[(s, s) for s in WINDOWS_SIZES], append_images=[windows_images[s] for s in WINDOWS_SIZES[:-1]])
@@ -99,7 +111,7 @@ def main() -> None:
             sys.exit("build: run docs/media/src/render.py panel first; the social preview embeds its panel")
         svg(BRAND / "social-preview.svg", 1280, tmp / "social.png", inter_fonts()).convert("RGB").save(BRAND / "social-preview.png", optimize=True)
     for out in sorted(BRAND.rglob("*")):
-        if out.suffix in {".png", ".icns", ".ico"}:
+        if out.is_file() and (out.suffix in {".png", ".icns", ".ico"} or "scalable" in out.parts):
             print(f"{out.relative_to(ROOT)}  {out.stat().st_size // 1024} KB")
 
 

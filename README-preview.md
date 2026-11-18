@@ -8,11 +8,11 @@
 <h3 align="center">Select anything. Press a key. It lands in Bronze.</h3>
 
 <p align="center">
-  A capture panel for notes and prompts on Mac and Windows, with end-to-end encrypted sync you host yourself.
+  A capture panel for notes and prompts on macOS, Windows and Linux, with end-to-end encrypted sync you host yourself.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-b8692f?style=flat-square&labelColor=2a2a2d" alt="Platform: macOS and Windows">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-b8692f?style=flat-square&labelColor=2a2a2d" alt="Platform: macOS, Windows and Linux">
   <img src="https://img.shields.io/badge/built%20with-Rust-b8692f?style=flat-square&labelColor=2a2a2d&logo=rust&logoColor=white" alt="Built with Rust">
   <img src="https://img.shields.io/badge/sync-end--to--end%20encrypted-b8692f?style=flat-square&labelColor=2a2a2d" alt="Sync: end-to-end encrypted">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-b8692f?style=flat-square&labelColor=2a2a2d" alt="License: MIT"></a>
@@ -32,7 +32,7 @@ Notes live in one local file, and sync to your own `bronze-sync` server is end-t
 
 ## Capture from anywhere
 
-Double-tap Left Shift on the Mac and Windows, or press `Ctrl+Alt+C`, and the selected text becomes a note.
+Press `Ctrl+Alt+C` on macOS, Windows or Linux, or double-tap Left Shift on macOS and Windows, and the selected text becomes a note.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/media/capture-dark.gif">
