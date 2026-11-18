@@ -15,7 +15,7 @@ use board::Board;
 use platform::{Fake, Native, Platform};
 use prefs::Prefs;
 use store::Store;
-use ui::{App, Saved, Window};
+use ui::{App, Global, Saved, Window};
 
 const SIZE: (f32, f32) = (360.0, 640.0);
 const MIN_SIZE: (f32, f32) = (300.0, 400.0);
@@ -88,6 +88,10 @@ fn main() {
     let created = window.clone();
     let app = app.on_window(move |native| created.created(native)).init(move || App::new(saved, platform, window));
     handle.update(|s, _| s.register_shortcuts());
+    if !headless {
+        let gestures = handle.clone();
+        platform::listen(move |gesture| gestures.update(move |s, tx| s.global(Global::of(gesture), tx)));
+    }
     rune::run_windows(move |displays| {
         let mut window = WindowSpec::from_app("main", app);
         if frame.is_none() {
