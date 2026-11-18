@@ -14,8 +14,12 @@ pub fn access() -> Access {
 
 pub fn ask_for_access() {}
 
-pub fn selected_text() -> Option<String> {
-    arboard::Clipboard::new().ok()?.get().clipboard(LinuxClipboardKind::Primary).text().ok()
+pub fn selected_text(reply: impl FnOnce(Option<String>)) {
+    reply(
+        arboard::Clipboard::new()
+            .ok()
+            .and_then(|mut clipboard| clipboard.get().clipboard(LinuxClipboardKind::Primary).text().ok()),
+    );
 }
 
 pub fn reveal_command(path: &Path) -> Command {

@@ -31,7 +31,7 @@ impl Platform for Native {
     fn read_selection(&self, reply: Reply) {
         thread::Builder::new()
             .name("bronze-selection".into())
-            .spawn(move || reply(selected_text()))
+            .spawn(move || selected_text(reply))
             .expect("spawn the selection reader");
     }
 

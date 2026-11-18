@@ -67,15 +67,17 @@ enum Source {
     PressedCopy,
 }
 
-pub fn selected_text() -> Option<String> {
-    let (source, text) = match focused_selection() {
-        Some(text) => (Source::FocusedApp, Some(text)),
-        None => (Source::PressedCopy, copied_selection()),
+pub fn selected_text(reply: impl FnOnce(Option<String>)) {
+    let deliver = |source: Source, text: Option<String>| {
+        let text = text.map(|text| unix_lines(&text));
+        let count = text.as_deref().map_or(0, |text| text.chars().count());
+        eprintln!("bronze: captured {count} characters via {source:?}");
+        reply(text);
     };
-    let text = text.map(|text| unix_lines(&text));
-    let count = text.as_deref().map_or(0, |text| text.chars().count());
-    eprintln!("bronze: captured {count} characters via {source:?}");
-    text
+    match focused_selection() {
+        Some(text) => deliver(Source::FocusedApp, Some(text)),
+        None => copied_selection(|text| deliver(Source::PressedCopy, text)),
+    }
 }
 
 fn unix_lines(text: &str) -> String {
@@ -118,22 +120,20 @@ impl Drop for Com {
 
 static CLIPBOARD: Mutex<()> = Mutex::new(());
 
-fn copied_selection() -> Option<String> {
+fn copied_selection(reply: impl FnOnce(Option<String>)) {
     let _only_copy = CLIPBOARD.lock().unwrap_or_else(PoisonError::into_inner);
-    within(MODIFIER_WAIT, || (!MODIFIERS.into_iter().any(is_down)).then_some(()))?;
-    let saved = Clipboard::open()?.contents();
+    let released = within(MODIFIER_WAIT, || (!MODIFIERS.into_iter().any(is_down)).then_some(()));
+    let Some(saved) = released.and_then(|()| Some(Clipboard::open()?.contents())) else { return reply(None) };
     let before = sequence();
     press_copy();
     let text = within(COPY_WAIT, || (sequence() != before).then(|| Clipboard::open()?.text()).flatten());
-    if sequence() != before {
-        put_back(&saved);
-    }
-    text
+    let ours = (sequence() != before).then(|| restore(&saved)).flatten();
+    reply(text);
+    guard_tail(&saved, ours);
 }
 
-fn put_back(saved: &Contents) {
+fn guard_tail(saved: &Contents, mut ours: Option<u32>) {
     let deadline = Instant::now() + TAIL_WAIT;
-    let mut ours = restore(saved);
     while let Some(seen) = ours {
         let left = deadline.saturating_duration_since(Instant::now());
         ours = within(left, || (sequence() != seen).then_some(())).and_then(|()| restore(saved));
