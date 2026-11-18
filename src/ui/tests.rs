@@ -551,10 +551,13 @@ fn a_started_vault_is_joined_with_its_sync_code_and_edits_flow_both_ways() {
     frames_until(&mut a, "a has b's note", |s| s.board().notes().count() == 3);
     assert_eq!(a.texts(), b.texts());
 
+    a.settle();
+    b.settle();
     a.click(a.at(&card_key(a.id("Ask for a rollout plan"))), PLAIN);
     b.click(b.at(&card_key(b.id("Ask for a rollout plan"))), PLAIN);
     b.key(Key::Backspace, PLAIN);
     frames_until(&mut a, "the delete arrived", |s| s.board().notes().count() == 2);
+    assert!(!a.texts().contains(&"Ask for a rollout plan".to_owned()));
     assert_eq!(a.rt.state.selected(), [], "the selection let go of the deleted note");
     b_notes.flush();
     let saved = fs::read_to_string(dir_b.path().join("notes.json")).unwrap();
