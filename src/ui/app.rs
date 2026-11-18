@@ -186,10 +186,11 @@ impl App {
             self.nothing_selected_until = None;
             changed = true;
         }
-        if self.access == Access::Missing && clock >= self.recheck_access_at {
-            self.access = self.platform.access();
+        if clock >= self.recheck_access_at {
+            let access = self.platform.access();
+            changed |= access != self.access;
+            self.access = access;
             self.recheck_access_at = clock + ACCESS_RECHECK_SECONDS;
-            changed |= self.access == Access::Granted;
         }
         if self.access == Access::Missing {
             tx.wake_at(self.recheck_access_at);

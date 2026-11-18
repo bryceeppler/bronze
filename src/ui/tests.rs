@@ -446,7 +446,7 @@ fn reveal_notes_file_asks_the_system_to_show_the_notes_file() {
 }
 
 #[test]
-fn missing_access_shows_a_notice_that_asks_and_clears_once_access_is_granted() {
+fn the_access_notice_asks_and_follows_access_as_it_is_granted_and_revoked() {
     let mut p = Panel::lacking_access();
     assert!(p.rt.find("notice").is_some());
     p.click(p.at("open-settings"), PLAIN);
@@ -455,6 +455,10 @@ fn missing_access_shows_a_notice_that_asks_and_clears_once_access_is_granted() {
     p.platform.set_access(Access::Granted);
     settle_for(&mut p, 1.5);
     assert!(p.rt.find("notice").is_none());
+
+    p.platform.set_access(Access::Missing);
+    settle_for(&mut p, 1.5);
+    assert!(p.rt.find("open-settings").is_some());
 }
 
 #[test]
