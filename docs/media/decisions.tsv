@@ -1,0 +1,8 @@
+ts	phase	decision	why	evidence	result
+2026-11-18T21:27:48.030756+00:00	frame	Kept all app code and the real README unchanged	N-226 owns product and README integration	README-preview.md	verified scope
+2026-11-18T21:27:48.030783+00:00	identity	Built original SVG geometry and outlined lettering	Make the proposed identity portable without font dependencies	assets/brand/logo-light.svg	complete
+2026-11-18T21:27:48.030786+00:00	capture	Used the local native app on an isolated display with fixture data	Capture real interactions without opening any personal notes	docs/media/capture.py	recorded all three actions
+2026-11-18T21:27:48.030787+00:00	verify	Decoded both ICNS families with macOS iconutil	Validate the actual platform container instead of trusting its extension	assets/brand/Bronze-light.icns	decoded on tyr
+2026-11-18T21:27:48.030789+00:00	preview	Served a staged static copy on odin tailnet address and verified it from loki	Keep the review page available without exposing the repository checkout	docs/media/preview.html	HTTP 200 for page and hero from loki
+2026-11-18T21:27:48.030790+00:00	limits	Deferred sync footage and the MIT badge	The current checkout has neither landed sync nor a license file	docs/media/README.md	re-take recorded
+2026-11-18T21:27:48.030791+00:00	verify	Checked all ICO sizes and real GIF frame changes	Verify generated files and visible actions rather than file existence	docs/media/validation.json	verified
