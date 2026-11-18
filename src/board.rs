@@ -1,3 +1,5 @@
+mod rank;
+mod replica;
 #[cfg(test)]
 mod tests;
 
