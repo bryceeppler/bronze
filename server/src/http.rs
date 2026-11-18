@@ -12,7 +12,7 @@ use axum::routing::get;
 use bronze_wire::{AuthToken, HEALTH_ROUTE, Malformed, Precondition, VAULT_ROUTE, VaultId, Version, wait_preference};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tokio::time::{Instant, sleep_until};
+use tokio::time::{Instant, sleep_until, timeout_at};
 
 use crate::store::{Read, Store, Write, Written};
 use crate::{Limits, Reject};
@@ -23,7 +23,6 @@ struct App(Arc<Shared>);
 struct Shared {
     store: Store,
     limits: Limits,
-    writes: watch::Sender<()>,
     stopping: watch::Receiver<bool>,
 }
 
@@ -35,7 +34,7 @@ pub async fn serve(
 ) -> std::io::Result<()> {
     let (stop, stopping) = watch::channel(false);
     let body_limit = DefaultBodyLimit::max(limits.max_bytes);
-    let app = App(Arc::new(Shared { store, limits, writes: watch::Sender::new(()), stopping }));
+    let app = App(Arc::new(Shared { store, limits, stopping }));
     let router = Router::new()
         .route(HEALTH_ROUTE, get(async || "ok"))
         .route(VAULT_ROUTE, get(read).put(write))
@@ -51,32 +50,35 @@ pub async fn serve(
 
 async fn read(State(app): State<App>, poll: Poll) -> Result<Response, Reject> {
     let deadline = Instant::now() + poll.wait;
-    let mut writes = app.0.writes.subscribe();
+    let mut writes = app.0.store.writes();
     let mut stopping = app.0.stopping.clone();
+    let mut read = app.read(&poll).await?;
     loop {
-        let Caller { vault, token } = poll.caller.clone();
-        match app.blocking(move |store, _| store.read(&vault, &token, poll.seen)).await? {
+        let known = match read {
             Read::Changed { version, bytes } => {
                 let headers = [(ETAG, version.etag()), (header::CONTENT_TYPE, "application/octet-stream".to_owned())];
                 return Ok((StatusCode::OK, headers, bytes).into_response());
             }
-            Read::Unchanged(version) => {
-                let woke = tokio::select! {
-                    changed = writes.changed() => changed.is_ok(),
-                    _ = sleep_until(deadline) => false,
-                    _ = stopping.wait_for(|stopping| *stopping) => false,
-                };
-                if !woke {
-                    return Ok((StatusCode::NOT_MODIFIED, [(ETAG, version.etag())]).into_response());
-                }
-            }
+            Read::Unchanged(version) => version,
+        };
+        let not_modified = (StatusCode::NOT_MODIFIED, [(ETAG, known.etag())]);
+        let woke = tokio::select! {
+            changed = writes.changed() => changed.is_ok(),
+            _ = sleep_until(deadline) => false,
+            _ = stopping.wait_for(|stopping| *stopping) => false,
+        };
+        if !woke {
+            return Ok(not_modified.into_response());
         }
+        read = match timeout_at(deadline, app.read(&poll)).await {
+            Ok(read) => read?,
+            Err(_) => return Ok(not_modified.into_response()),
+        };
     }
 }
 
 async fn write(State(app): State<App>, write: Write) -> Result<Response, Reject> {
     let written = app.blocking(move |store, limits| store.write(write, limits)).await?;
-    app.0.writes.send_replace(());
     Ok(match written {
         Written::Created(version) => (StatusCode::CREATED, [(ETAG, version.etag())]).into_response(),
         Written::Replaced(version) => (StatusCode::NO_CONTENT, [(ETAG, version.etag())]).into_response(),
@@ -84,6 +86,11 @@ async fn write(State(app): State<App>, write: Write) -> Result<Response, Reject>
 }
 
 impl App {
+    async fn read(&self, poll: &Poll) -> Result<Read, Reject> {
+        let (Caller { vault, token }, seen) = (poll.caller.clone(), poll.seen);
+        self.blocking(move |store, _| store.read(&vault, &token, seen)).await
+    }
+
     async fn blocking<T: Send + 'static>(
         &self,
         work: impl FnOnce(&Store, &Limits) -> Result<T, Reject> + Send + 'static,
