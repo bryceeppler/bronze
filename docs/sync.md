@@ -10,7 +10,10 @@ Sync is off until you turn it on, and with it off Bronze opens no network connec
 Every machine keeps your whole board, and the server keeps one copy of it.
 That copy is encrypted on your machine before it leaves, with a key the server never sees.
 The key comes from your sync code, which Bronze makes when you start a vault.
-Anyone with the sync code can read and change your notes, and nobody without it can, the server's owner included.
+Anyone with the sync code can read and change your notes.
+Nobody without it can read them or change them, the server's owner included.
+The server's owner can still refuse to serve, delete the server's copy, or hand back an older copy.
+None of that loses a note: every machine keeps its own full copy and merges what the server gives it, so an older copy from the server only makes the machine send the newer notes again.
 There are no accounts or passwords, so a lost sync code cannot be reset.
 
 When you make a change, Bronze fetches the server's copy, merges it with its own board, and uploads the result if anything is new.
@@ -153,7 +156,7 @@ Stamps order by time, then by machine id, so two machines never tie.
   A note in a deleted section shows outside any section.
 - The section new notes go to stays on each machine and is not synced.
 
-Merging is a pointwise maximum, so merging in any order, any number of times, gives the same board.
+Each field keeps its winning value, so merging in any order, any number of times, gives the same board.
 
 ## Limits
 
@@ -165,8 +168,16 @@ These follow from the design, and they are worth knowing before you rely on it.
 - **A lost sync code is final for the server's copy.**
   Without it, the copy on the server cannot be read by anyone.
   Each machine still keeps every note, and Bronze can show its sync code again from **Sync…** as long as one machine still syncs.
-- **A clock that runs ahead wins ties.**
-  Last writer wins by wall clock time, so a machine whose clock is minutes fast wins edits to the same field made in those minutes.
+- **A fast clock can override later edits.**
+  Last writer wins by each machine's clock.
+  If one machine's clock runs ahead, its change to a field can win over a change another machine made afterwards, until that machine has synced and caught its clock up.
+- **A sync code cannot be revoked.**
+  There is no way to lock one machine out or to change a vault's code.
+  If a code leaks or a machine is lost, choose **Stop Syncing** on every machine you still have, start a new vault from one of them, and join the others with its new code; your notes carry over.
+  The old vault's copy stays on the server, readable with the old code, until you remove the server's data folder, which removes every vault on it.
+- **Notes on a machine are not encrypted.**
+  `notes.json` and `sync.json` are ordinary files that anyone who can read your account's files can read.
+  Encryption protects notes on the way to the server and on the server, not on your own disk; use your system's disk encryption for that.
 - **Deleted notes leave their ids behind.**
   Each deletion keeps a 16 byte id in the board for good, so a delete can never be undone by an old copy.
 - **Every upload sends the whole board.**

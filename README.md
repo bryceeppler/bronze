@@ -20,7 +20,8 @@ cargo run
 ```
 
 Linux needs the packages Rune lists under "Linux" in its README.
-`--data <dir>` keeps notes and preferences in a folder of your choice.
+Type in the box at the bottom and press Enter to add a note.
+`--data <dir>` keeps notes and preferences in a folder of your choice, as in `cargo run -- --data /path/to/folder`.
 
 ## Mac
 
