@@ -7,6 +7,7 @@ mod look;
 mod overlays;
 mod scenes;
 mod strike;
+mod sync_sheet;
 #[cfg(test)]
 mod tests;
 mod window;

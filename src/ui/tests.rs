@@ -15,7 +15,7 @@ use crate::platform::{Access, Fake};
 use crate::prefs::Prefs;
 use crate::store::{self, Store};
 use crate::sync::test_server::TestServer;
-use crate::sync::{Setup, Status, Syncing};
+use crate::sync::{Offline, Status, Syncing};
 
 struct Panel {
     rt: Runtime<App>,
@@ -529,30 +529,88 @@ fn without_sync_json_sync_is_off() {
     assert!(!dir.path().join("sync.json").exists());
 }
 
+impl Panel {
+    fn open_sync(&mut self) {
+        self.click(self.at("more"), PLAIN);
+        self.click(self.menu_item("Sync\u{2026}"), PLAIN);
+    }
+
+    fn element(&self, key: &str) -> Option<rune::ElementInfo> {
+        self.rt.elements().into_iter().find(|e| e.key.as_deref() == Some(key))
+    }
+
+    fn text_at(&self, key: &str) -> Option<String> {
+        self.element(key).and_then(|e| e.text)
+    }
+
+    fn reads(&self, text: &str) -> bool {
+        self.rt.elements().iter().any(|e| e.text.as_deref() == Some(text))
+    }
+
+    fn paste(&mut self, text: &str) {
+        self.rt.paste(text);
+        self.settle();
+    }
+
+    fn clipboard_text(&self) -> String {
+        self.clipboard.text().map(|text| text.as_str().to_owned()).unwrap_or_default()
+    }
+
+    fn start_vault(&mut self, server: &str) -> String {
+        self.open_sync();
+        self.type_text(server);
+        assert_eq!(self.element("sync-go").and_then(|e| e.label).as_deref(), Some("Start New Vault"));
+        self.key(Key::Enter, PLAIN);
+        assert!(self.reads("Your Sync Code"), "the new code is shown");
+        self.click(self.at("sync-copy"), PLAIN);
+        let code = self.clipboard_text();
+        assert_eq!(self.text_at("sync-code"), Some(code.clone()), "the code on the clipboard is the one shown");
+        self.click(self.at("sync-done"), PLAIN);
+        assert!(self.rt.find("sync").is_none(), "Done closes the sheet");
+        code
+    }
+
+    fn join_vault(&mut self, code: &str) {
+        self.open_sync();
+        self.paste(code);
+        assert_eq!(self.element("sync-go").and_then(|e| e.label).as_deref(), Some("Join Vault"));
+        self.click(self.at("sync-go"), PLAIN);
+    }
+}
+
 #[test]
-fn a_started_vault_is_joined_with_its_sync_code_and_edits_flow_both_ways() {
+fn a_new_vault_shows_its_code_once_and_a_second_machine_joins_with_it() {
     let server = TestServer::start();
+    let host = server.address.to_string().replace("http://", "");
     let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let (mut a, _) = on_folder(dir_a.path());
     a.submit("Ask for a rollout plan");
     a.submit("Compare the two cache designs");
-    let code = a.rt.state.sync_with(Setup::parse(&server.address.to_string()).unwrap()).unwrap();
-    assert_eq!(a.rt.state.sync_code(), Some(&code));
+    let code = a.start_vault(&server.address.to_string());
     let file = dir_a.path().join("sync.json");
-    assert!(fs::read_to_string(&file).unwrap().contains(&code.key.reveal()));
+    assert!(fs::read_to_string(&file).unwrap().contains(code.split_once('#').unwrap().1));
     #[cfg(unix)]
     assert_eq!(std::os::unix::fs::PermissionsExt::mode(&fs::metadata(&file).unwrap().permissions()) & 0o777, 0o600);
     frames_until(&mut a, "a synced", |s| s.sync_status() == Status::Synced);
 
     let (mut b, b_notes) = on_folder(dir_b.path());
     b.submit("From b");
-    assert_eq!(b.rt.state.sync_with(Setup::parse(&code.reveal()).unwrap()).unwrap(), code);
+    b.open_sync();
+    b.paste(&code);
+    assert!(b.reads(&format!("Joins your vault on {host}")));
+    assert!(b.reads("Notes already on this machine are added to the vault. Nothing is lost."));
+    b.click(b.at("sync-go"), PLAIN);
     frames_until(&mut b, "b has a's notes", |s| s.board().notes().count() == 3);
     frames_until(&mut a, "a has b's note", |s| s.board().notes().count() == 3);
     assert_eq!(a.texts(), b.texts());
-
-    a.settle();
+    frames_until(&mut b, "b synced", |s| s.sync_status() == Status::Synced);
     b.settle();
+    assert_eq!(b.text_at("sync-status"), Some(format!("Synced with {host}")));
+    assert!(b.text_at("sync-code").is_some_and(|shown| !shown.contains(&code[code.len() - 20..code.len() - 4])));
+
+    b.key(Key::Escape, PLAIN);
+    assert!(b.rt.find("sync").is_none());
+    a.settle();
     a.click(a.at(&card_key(a.id("Ask for a rollout plan"))), PLAIN);
     b.click(b.at(&card_key(b.id("Ask for a rollout plan"))), PLAIN);
     b.key(Key::Backspace, PLAIN);
@@ -565,24 +623,84 @@ fn a_started_vault_is_joined_with_its_sync_code_and_edits_flow_both_ways() {
 }
 
 #[test]
-fn stopping_sync_removes_sync_json_and_keeps_every_note() {
+fn each_bad_entry_says_what_is_wrong_and_starts_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut p, _) = on_folder(dir.path());
+    p.open_sync();
+    let made_up = "https://sync.example.com#bronze1-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+    for (typed, sentence) in [
+        ("sync.example.com", "This is not a server address or a sync code. A server address starts with https://."),
+        ("http://sync.example.com", "Use https. Plain http works only for localhost."),
+        (
+            &made_up[..60],
+            "This code is cut short or has extra characters. Copy the whole code again from the other machine.",
+        ),
+        (
+            &format!("{made_up}-630dcd28"),
+            "This code has a typo somewhere, so its check doesn't match. Copy it again from the other machine.",
+        ),
+    ] {
+        p.command('a');
+        p.type_text(typed);
+        assert_eq!(p.text_at("sync-note").as_deref(), Some(sentence), "{typed:?}");
+        p.key(Key::Enter, PLAIN);
+        p.click(p.at("sync-go"), PLAIN);
+        assert!(p.rt.find("sync-field").is_some(), "{typed:?} keeps the sheet on the field");
+        assert_eq!(p.rt.state.sync_status(), Status::Off);
+        assert!(!dir.path().join("sync.json").exists());
+    }
+
+    p.key(Key::Escape, PLAIN);
+    assert!(p.rt.find("sync").is_none());
+    assert_eq!(p.rt.state.panel, Shown::Shown);
+}
+
+#[test]
+fn stopping_sync_keeps_every_note_and_removes_sync_json() {
     let server = TestServer::start();
     let (dir, fresh) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let (mut a, _) = on_folder(dir.path());
     a.submit("Synced before stopping");
-    let code = a.rt.state.sync_with(Setup::Start(server.address.clone())).unwrap();
+    let code = a.start_vault(&server.address.to_string());
     frames_until(&mut a, "a synced", |s| s.sync_status() == Status::Synced);
-    a.rt.state.stop_syncing().unwrap();
+
+    a.open_sync();
+    assert!(a.reads("Stopping keeps every note on this machine."));
+    a.click(a.at("sync-stop"), PLAIN);
+    assert!(a.rt.find("sync-field").is_some(), "the sheet offers to sync again");
     assert_eq!(a.rt.state.sync_status(), Status::Off);
-    assert_eq!(a.rt.state.sync_code(), None);
     assert!(!dir.path().join("sync.json").exists());
+    a.key(Key::Escape, PLAIN);
+    a.click(a.at("composer"), PLAIN);
     a.submit("Written after stopping");
     assert_eq!(a.texts(), ["Synced before stopping", "Written after stopping"]);
+    a.click(a.at("more"), PLAIN);
+    assert!(a.reads("\u{25CB}  Off"));
 
     let (mut c, _) = on_folder(fresh.path());
-    c.rt.state.sync_with(Setup::Join(code)).unwrap();
+    c.join_vault(&code);
     frames_until(&mut c, "c synced", |s| s.sync_status() == Status::Synced);
     assert_eq!(c.texts(), ["Synced before stopping"]);
+}
+
+#[test]
+fn an_unreachable_server_shows_the_problem_and_notes_still_save_here() {
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut a, notes) = on_folder(dir.path());
+    a.start_vault(&format!("http://127.0.0.1:{port}"));
+    frames_until(&mut a, "a offline", |s| matches!(s.sync_status(), Status::Offline(Offline::Unreachable(_))));
+
+    a.open_sync();
+    assert_eq!(a.text_at("sync-status"), Some(format!("Can't reach 127.0.0.1:{port}")));
+    assert!(a.text_at("sync-note").is_some_and(|note| note.starts_with("New notes stay on this machine")));
+    a.key(Key::Escape, PLAIN);
+    a.click(a.at("composer"), PLAIN);
+    a.submit("Written while the server is away");
+    notes.flush();
+    assert!(fs::read_to_string(dir.path().join("notes.json")).unwrap().contains("Written while the server is away"));
+    a.click(a.at("more"), PLAIN);
+    assert!(a.reads("\u{25CF}  Not synced"));
 }
 
 #[test]
@@ -590,11 +708,11 @@ fn a_saved_sync_json_resumes_syncing_at_the_next_launch() {
     let server = TestServer::start();
     let dir = tempfile::tempdir().unwrap();
     let (mut a, notes) = on_folder(dir.path());
-    let code = a.rt.state.sync_with(Setup::Start(server.address.clone())).unwrap();
+    let code = a.start_vault(&server.address.to_string());
     frames_until(&mut a, "a synced", |s| s.sync_status() == Status::Synced);
     drop(a);
     notes.flush();
     let (mut again, _) = on_folder(dir.path());
-    assert_eq!(again.rt.state.sync_code(), Some(&code));
+    assert_eq!(again.rt.state.sync_code().map(|shown| shown.reveal()), Some(code));
     frames_until(&mut again, "the relaunch synced", |s| s.sync_status() == Status::Synced);
 }

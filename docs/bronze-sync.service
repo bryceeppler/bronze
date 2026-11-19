@@ -1,0 +1,15 @@
+[Unit]
+Description=bronze-sync, the sync server for Bronze
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/bronze-sync
+Environment=BRONZE_SYNC_DATA=/var/lib/bronze-sync
+Environment=BRONZE_SYNC_LISTEN=127.0.0.1:8787
+DynamicUser=yes
+StateDirectory=bronze-sync
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
