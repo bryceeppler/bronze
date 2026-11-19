@@ -5,6 +5,7 @@ mod inline;
 mod platform;
 mod prefs;
 mod store;
+mod sync;
 mod taps;
 mod ui;
 
@@ -17,6 +18,7 @@ use board::Board;
 use platform::{Fake, Native, Platform};
 use prefs::Prefs;
 use store::Store;
+use sync::Syncing;
 use ui::{App, Global, Saved, Window};
 
 const SIZE: (f32, f32) = (360.0, 640.0);
@@ -49,9 +51,13 @@ fn main() {
     };
     let saved = match data {
         Some(dir) => open(&dir),
-        None => {
-            Saved { board: Board::default(), notes: Store::Memory, prefs: Prefs::default(), preferences: Store::Memory }
-        }
+        None => Saved {
+            board: if headless { Board::seeded(0) } else { Board::default() },
+            notes: Store::Memory,
+            prefs: Prefs::default(),
+            preferences: Store::Memory,
+            sync: Syncing::unsaved(),
+        },
     };
     let platform: Rc<dyn Platform> =
         if headless { Rc::new(Fake::selecting(launch.selection)) } else { Rc::new(Native) };
@@ -140,7 +146,7 @@ fn instance_id(folder: &Path) -> String {
 fn open(dir: &Path) -> Saved {
     let (board, notes) = store::open::<Board>(dir);
     let (prefs, preferences) = store::open::<Prefs>(dir);
-    Saved { board, notes, prefs, preferences }
+    Saved { board, notes, prefs, preferences, sync: Syncing::saved_in(dir) }
 }
 
 impl Launch {

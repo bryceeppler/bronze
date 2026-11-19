@@ -8,16 +8,17 @@ use super::commands;
 use super::icons;
 use super::list::SECTION_LABEL;
 use super::look::Look;
+use super::sync_sheet;
 use crate::board::Scope;
 
 pub fn mount(s: &App, look: &Look, kit: &Kit, layer: &mut Vec<El>) {
-    match s.overlay {
-        Overlay::NoteMenu(at) => {
+    match &s.overlay {
+        &Overlay::NoteMenu(at) => {
             let menu = note_menu(s, context_menu("note-menu", el(), Some(at)));
             let anchor = menu.build(kit, layer);
             layer.push(anchor);
         }
-        Overlay::SectionMenu(id, at) => {
+        &Overlay::SectionMenu(id, at) => {
             let menu = context_menu("section-menu", el(), Some(at))
                 .min_width(180.0)
                 .on_close(|s: &mut App| s.overlay = Overlay::None)
@@ -30,8 +31,9 @@ pub fn mount(s: &App, look: &Look, kit: &Kit, layer: &mut Vec<El>) {
             let anchor = menu.build(kit, layer);
             layer.push(anchor);
         }
-        Overlay::Switcher { picked } => layer.push(sheet(switcher(s, picked, look), look)),
+        &Overlay::Switcher { picked } => layer.push(sheet(switcher(s, picked, look), look)),
         Overlay::Shortcuts => layer.push(sheet(shortcuts(look), look)),
+        Overlay::Sync(setup) => layer.push(sheet(sync_sheet::view(s, setup, look), look)),
         Overlay::None | Overlay::Menu | Overlay::Rename(_) => {}
     }
 }

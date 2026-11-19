@@ -17,6 +17,7 @@ pub struct Look {
     pub hairline: Color,
     pub ring: Color,
     pub accent: Color,
+    pub danger: Color,
     pub on_accent: Color,
     pub selected: Color,
     pub code: Color,
@@ -44,6 +45,7 @@ impl Look {
                 hairline: srgb(0xffffff).alpha(0.1),
                 ring: srgb(0x7a7a80),
                 accent: srgb(0xcd7f32),
+                danger: srgb(0xec8a74),
                 on_accent: srgb(0xffffff),
                 selected: srgb(0x44382e),
                 code: srgb(0xffffff).alpha(0.09),
@@ -67,6 +69,7 @@ impl Look {
                 hairline: srgb(0x000000).alpha(0.09),
                 ring: srgb(0x8e8e93),
                 accent: srgb(0xa3612a),
+                danger: srgb(0xb23c2c),
                 on_accent: srgb(0xffffff),
                 selected: srgb(0xf6efea),
                 code: srgb(0x000000).alpha(0.06),
@@ -115,6 +118,7 @@ mod tests {
             assert!(contrast(look.muted, look.card) >= 4.5, "muted text, dark={dark}");
             assert!(contrast(look.label, look.bg) >= 4.5, "section labels, dark={dark}");
             assert!(contrast(look.accent, look.card) >= 4.5, "accent on a card, dark={dark}");
+            assert!(contrast(look.danger, look.raised) >= 4.5, "a problem on a sheet, dark={dark}");
             assert!(contrast(look.on_accent, look.accent) >= 3.0, "check on the accent, dark={dark}");
             assert!(contrast(look.ring, look.card) >= 3.0, "checkbox ring, dark={dark}");
         }

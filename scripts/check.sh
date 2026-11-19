@@ -3,9 +3,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 cargo build
+
+server=(--manifest-path server/Cargo.toml)
+cargo fmt --check "${server[@]}"
+cargo clippy --locked "${server[@]}" --all-targets -- -D warnings
+cargo test --locked "${server[@]}"
 
 bin=target/debug/bronze
 mkdir -p out/snaps out/trees
