@@ -1,3 +1,4 @@
+use std::io;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -10,6 +11,7 @@ use crate::board::{Board, Note, NoteId, Owner, Place, Scope, SectionId, Submitte
 use crate::platform::{Access, Platform};
 use crate::prefs::Prefs;
 use crate::store::Store;
+use crate::sync::{Delivery, Setup, Status, SyncCode, Syncing};
 
 const NOTICE_SECONDS: f64 = 2.5;
 const ACCESS_RECHECK_SECONDS: f64 = 1.0;
@@ -17,6 +19,7 @@ const ACCESS_RECHECK_SECONDS: f64 = 1.0;
 pub struct App {
     board: Board,
     notes: Store<Board>,
+    sync: Syncing,
     prefs: Prefs,
     preferences: Store<Prefs>,
     platform: Rc<dyn Platform>,
@@ -40,6 +43,7 @@ pub struct Saved {
     pub notes: Store<Board>,
     pub prefs: Prefs,
     pub preferences: Store<Prefs>,
+    pub sync: Syncing,
 }
 
 pub enum Notice<'a> {
@@ -98,9 +102,12 @@ pub enum Pick {
 
 impl App {
     pub fn new(saved: Saved, platform: Rc<dyn Platform>, window: Window) -> App {
+        let mut sync = saved.sync;
+        sync.resume(saved.board.replica(), window.waker());
         App {
             board: saved.board,
             notes: saved.notes,
+            sync,
             prefs: saved.prefs,
             preferences: saved.preferences,
             access: platform.access(),
@@ -180,6 +187,12 @@ impl App {
         let mut changed = false;
         while let Ok(text) = self.selections.1.try_recv() {
             self.captured(text, tx);
+            changed = true;
+        }
+        for arrival in self.sync.arrived() {
+            if let Delivery::Remote(replica) = arrival {
+                self.edit(|board| board.join(&replica));
+            }
             changed = true;
         }
         if self.nothing_selected_until.is_some_and(|until| clock >= until) {
@@ -273,6 +286,7 @@ impl App {
     pub fn edit<R>(&mut self, change: impl FnOnce(&mut Board) -> R) -> R {
         let result = change(&mut self.board);
         self.notes.save(&self.board);
+        self.sync.edited(self.board.replica());
         let board = &self.board;
         self.selection.ids.retain(|id| board.notes().any(|n| n.id == *id));
         result
@@ -479,6 +493,27 @@ impl App {
         if let Some(Dragging { id, target: Some(place), .. }) = self.dragging.take() {
             self.edit(|board| board.move_note(id, place));
         }
+    }
+}
+
+#[cfg_attr(not(test), expect(dead_code, reason = "the setup screen calls these"))]
+impl App {
+    pub fn sync_with(&mut self, setup: Setup) -> io::Result<SyncCode> {
+        let code = setup.code();
+        self.sync.start(code.clone(), self.board.replica(), self.window.waker())?;
+        Ok(code)
+    }
+
+    pub fn stop_syncing(&mut self) -> io::Result<()> {
+        self.sync.stop()
+    }
+
+    pub fn sync_status(&self) -> Status {
+        self.sync.status()
+    }
+
+    pub fn sync_code(&self) -> Option<&SyncCode> {
+        self.sync.code()
     }
 }
 

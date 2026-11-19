@@ -1,4 +1,8 @@
+use std::fs;
+use std::path::Path;
 use std::rc::Rc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use rune::clipboard::{self, MemoryClipboard};
 use rune::{AppSpec, Env, Key, KeyEvent, Mods, PhysicalInput, Runtime};
@@ -10,6 +14,8 @@ use crate::board::{Board, NoteId, Scope};
 use crate::platform::{Access, Fake};
 use crate::prefs::Prefs;
 use crate::store::{self, Store};
+use crate::sync::test_server::TestServer;
+use crate::sync::{Setup, Status, Syncing};
 
 struct Panel {
     rt: Runtime<App>,
@@ -23,7 +29,13 @@ impl Panel {
     }
 
     fn blank() -> Saved {
-        Saved { board: Board::default(), notes: Store::Memory, prefs: Prefs::default(), preferences: Store::Memory }
+        Saved {
+            board: Board::default(),
+            notes: Store::Memory,
+            prefs: Prefs::default(),
+            preferences: Store::Memory,
+            sync: Syncing::unsaved(),
+        }
     }
 
     fn with(saved: Saved) -> Panel {
@@ -272,7 +284,13 @@ fn the_switcher_scrolls_to_keep_the_picked_section_in_the_window() {
     for number in 1..=25 {
         board.submit(&format!("# Section {number:02}"));
     }
-    let mut p = Panel::with(Saved { board, notes: Store::Memory, prefs: Prefs::default(), preferences: Store::Memory });
+    let mut p = Panel::with(Saved {
+        board,
+        notes: Store::Memory,
+        prefs: Prefs::default(),
+        preferences: Store::Memory,
+        sync: Syncing::unsaved(),
+    });
     p.command('k');
     for _ in 0..25 {
         p.key(Key::Down, PLAIN);
@@ -415,7 +433,11 @@ fn keep_on_top_and_the_list_view_survive_a_restart() {
     let open = || {
         let (board, notes) = store::open::<Board>(dir.path());
         let (prefs, preferences) = store::open::<Prefs>(dir.path());
-        (Saved { board, notes: notes.clone(), prefs, preferences: preferences.clone() }, notes, preferences)
+        (
+            Saved { board, notes: notes.clone(), prefs, preferences: preferences.clone(), sync: Syncing::unsaved() },
+            notes,
+            preferences,
+        )
     };
     let (saved, notes, preferences) = open();
     let mut p = Panel::with(saved);
@@ -439,7 +461,13 @@ fn keep_on_top_and_the_list_view_survive_a_restart() {
 fn reveal_notes_file_asks_the_system_to_show_the_notes_file() {
     let dir = tempfile::tempdir().unwrap();
     let (board, notes) = store::open::<Board>(dir.path());
-    let mut p = Panel::with(Saved { board, notes, prefs: Prefs::default(), preferences: Store::Memory });
+    let mut p = Panel::with(Saved {
+        board,
+        notes,
+        prefs: Prefs::default(),
+        preferences: Store::Memory,
+        sync: Syncing::unsaved(),
+    });
     p.click(p.at("more"), PLAIN);
     p.click(p.menu_item("Reveal Notes File"), PLAIN);
     assert_eq!(p.platform.revealed(), [dir.path().join("notes.json")]);
@@ -469,4 +497,104 @@ fn nothing_selected_shows_over_missing_access_and_gives_way_to_it() {
     assert!(p.rt.find("open-settings").is_none());
     settle_for(&mut p, 3.0);
     assert!(p.rt.find("open-settings").is_some());
+}
+
+fn on_folder(dir: &Path) -> (Panel, Store<Board>) {
+    let (board, notes) = store::open::<Board>(dir);
+    let saved = Saved {
+        board,
+        notes: notes.clone(),
+        prefs: Prefs::default(),
+        preferences: Store::Memory,
+        sync: Syncing::saved_in(dir),
+    };
+    (Panel::with(saved), notes)
+}
+
+fn frames_until(p: &mut Panel, what: &str, done: impl Fn(&App) -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !done(&p.rt.state) {
+        assert!(Instant::now() < deadline, "{what}; sync is {}", p.rt.state.sync_status());
+        p.rt.frame(1.0 / 60.0);
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn without_sync_json_sync_is_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let (p, _) = on_folder(dir.path());
+    assert_eq!(p.rt.state.sync_status(), Status::Off);
+    assert_eq!(p.rt.state.sync_code(), None);
+    assert!(!dir.path().join("sync.json").exists());
+}
+
+#[test]
+fn a_started_vault_is_joined_with_its_sync_code_and_edits_flow_both_ways() {
+    let server = TestServer::start();
+    let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (mut a, _) = on_folder(dir_a.path());
+    a.submit("Ask for a rollout plan");
+    a.submit("Compare the two cache designs");
+    let code = a.rt.state.sync_with(Setup::parse(&server.address.to_string()).unwrap()).unwrap();
+    assert_eq!(a.rt.state.sync_code(), Some(&code));
+    let file = dir_a.path().join("sync.json");
+    assert!(fs::read_to_string(&file).unwrap().contains(&code.key.reveal()));
+    #[cfg(unix)]
+    assert_eq!(std::os::unix::fs::PermissionsExt::mode(&fs::metadata(&file).unwrap().permissions()) & 0o777, 0o600);
+    frames_until(&mut a, "a synced", |s| s.sync_status() == Status::Synced);
+
+    let (mut b, b_notes) = on_folder(dir_b.path());
+    b.submit("From b");
+    assert_eq!(b.rt.state.sync_with(Setup::parse(&code.reveal()).unwrap()).unwrap(), code);
+    frames_until(&mut b, "b has a's notes", |s| s.board().notes().count() == 3);
+    frames_until(&mut a, "a has b's note", |s| s.board().notes().count() == 3);
+    assert_eq!(a.texts(), b.texts());
+
+    a.settle();
+    b.settle();
+    a.click(a.at(&card_key(a.id("Ask for a rollout plan"))), PLAIN);
+    b.click(b.at(&card_key(b.id("Ask for a rollout plan"))), PLAIN);
+    b.key(Key::Backspace, PLAIN);
+    frames_until(&mut a, "the delete arrived", |s| s.board().notes().count() == 2);
+    assert!(!a.texts().contains(&"Ask for a rollout plan".to_owned()));
+    assert_eq!(a.rt.state.selected(), [], "the selection let go of the deleted note");
+    b_notes.flush();
+    let saved = fs::read_to_string(dir_b.path().join("notes.json")).unwrap();
+    assert!(saved.contains("Compare the two cache designs"), "a note from a is saved on b: {saved}");
+}
+
+#[test]
+fn stopping_sync_removes_sync_json_and_keeps_every_note() {
+    let server = TestServer::start();
+    let (dir, fresh) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (mut a, _) = on_folder(dir.path());
+    a.submit("Synced before stopping");
+    let code = a.rt.state.sync_with(Setup::Start(server.address.clone())).unwrap();
+    frames_until(&mut a, "a synced", |s| s.sync_status() == Status::Synced);
+    a.rt.state.stop_syncing().unwrap();
+    assert_eq!(a.rt.state.sync_status(), Status::Off);
+    assert_eq!(a.rt.state.sync_code(), None);
+    assert!(!dir.path().join("sync.json").exists());
+    a.submit("Written after stopping");
+    assert_eq!(a.texts(), ["Synced before stopping", "Written after stopping"]);
+
+    let (mut c, _) = on_folder(fresh.path());
+    c.rt.state.sync_with(Setup::Join(code)).unwrap();
+    frames_until(&mut c, "c synced", |s| s.sync_status() == Status::Synced);
+    assert_eq!(c.texts(), ["Synced before stopping"]);
+}
+
+#[test]
+fn a_saved_sync_json_resumes_syncing_at_the_next_launch() {
+    let server = TestServer::start();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut a, notes) = on_folder(dir.path());
+    let code = a.rt.state.sync_with(Setup::Start(server.address.clone())).unwrap();
+    frames_until(&mut a, "a synced", |s| s.sync_status() == Status::Synced);
+    drop(a);
+    notes.flush();
+    let (mut again, _) = on_folder(dir.path());
+    assert_eq!(again.rt.state.sync_code(), Some(&code));
+    frames_until(&mut again, "the relaunch synced", |s| s.sync_status() == Status::Synced);
 }
