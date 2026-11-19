@@ -455,6 +455,22 @@ fn a_stop_while_the_first_get_is_held_lets_no_put_follow() {
 }
 
 #[test]
+fn a_stop_while_the_board_is_being_sealed_lets_no_put_follow() {
+    const SEALS_FOR_LONGER_THAN: Duration = Duration::from_millis(5);
+    let mut wire = Wire::listen();
+    let folder = tempfile::tempdir().unwrap();
+    let mut syncing = Syncing::saved_in(folder.path());
+    let mut board = Board::seeded(1);
+    board.capture("eight mebibytes ".repeat(512 * 1024));
+    syncing.start(Setup::Start(wire.address.clone()).code(), board.replica(), || {}).unwrap();
+    let (_, held) = wire.request();
+    held.send(answer("404 Not Found", None, b"")).unwrap();
+    thread::sleep(SEALS_FOR_LONGER_THAN);
+    syncing.stop().unwrap();
+    wire.closes_with_no_other_request();
+}
+
+#[test]
 fn a_stop_while_synced_lets_the_long_poll_answer_and_starts_no_other() {
     let mut wire = Wire::listen();
     let folder = tempfile::tempdir().unwrap();

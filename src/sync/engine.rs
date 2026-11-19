@@ -44,7 +44,7 @@ enum Server {
 
 enum Request {
     Pull,
-    Push(Precondition),
+    Push(Precondition, Vec<u8>),
 }
 
 enum Exchange {
@@ -132,17 +132,19 @@ impl Engine {
         loop {
             let request = match &self.server {
                 Server::Unknown => Request::Pull,
-                Server::Missing => Request::Push(Precondition::Create),
-                Server::At(version, known) if *known != self.local => Request::Push(Precondition::Replace(*version)),
+                Server::Missing => Request::Push(Precondition::Create, self.seal.seal(&self.local)),
+                Server::At(version, known) if *known != self.local => {
+                    Request::Push(Precondition::Replace(*version), self.seal.seal(&self.local))
+                }
                 Server::At(..) => return self.settle(Status::Synced),
                 Server::Unopenable(_, why) => return self.settle(Status::Refused((*why).into())),
             };
-            let exchanged = self.line.exchange(|remote| match request {
-                Request::Pull => remote.pull(None).map(Exchange::Pulled),
-                Request::Push(precondition) => {
-                    remote.push(precondition, &self.seal.seal(&self.local)).map(Exchange::Pushed)
+            let exchanged = match request {
+                Request::Pull => self.line.pull(None).map(|pulled| pulled.map(Exchange::Pulled)),
+                Request::Push(precondition, sealed) => {
+                    self.line.push(precondition, &sealed).map(|pushed| pushed.map(Exchange::Pushed))
                 }
-            });
+            };
             match exchanged {
                 Some(Ok(Exchange::Pulled(pulled))) => self.pulled(pulled),
                 Some(Ok(Exchange::Pushed(pushed))) => self.pushed(pushed),
@@ -198,7 +200,7 @@ impl Engine {
         thread::Builder::new()
             .name("bronze-sync-watch".into())
             .spawn(move || {
-                if let Some(pulled) = line.exchange(|remote| remote.pull(Some(seen))) {
+                if let Some(pulled) = line.pull(Some(seen)) {
                     _ = events.send(Event::Pulled(pulled));
                 }
             })
@@ -232,7 +234,15 @@ impl Halt {
 }
 
 impl Line {
-    fn exchange<T>(&self, request: impl FnOnce(&Remote) -> T) -> Option<T> {
+    fn pull(&self, seen: Option<Version>) -> Option<Result<Pulled, Failure>> {
+        self.unless_halted(|remote| remote.pull(seen))
+    }
+
+    fn push(&self, precondition: Precondition, sealed: &[u8]) -> Option<Result<Pushed, Failure>> {
+        self.unless_halted(|remote| remote.push(precondition, sealed))
+    }
+
+    fn unless_halted<T>(&self, request: impl FnOnce(&Remote) -> T) -> Option<T> {
         if self.halt.halted() {
             return None;
         }
