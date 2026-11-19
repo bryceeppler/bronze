@@ -54,11 +54,6 @@ impl Global {
         Global::from_id(link.strip_prefix(LINK_SCHEME)?.trim_end_matches('/'))
     }
 
-    pub fn portal_trigger(self) -> String {
-        let (modifiers, key) = self.chord().rsplit_once('+').unwrap_or(("", self.chord()));
-        modifiers.split('+').filter(|m| !m.is_empty()).map(|m| m.to_uppercase() + "+").collect::<String>() + key
-    }
-
     pub fn chord(self) -> &'static str {
         match self {
             Global::Capture => "ctrl+alt+c",

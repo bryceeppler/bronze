@@ -18,6 +18,7 @@ use crate::ui::Global;
 pub type Reply = Box<dyn FnOnce(Option<String>) + Send>;
 pub type OnShortcut = Box<dyn Fn(ShortcutEvent) + Send>;
 
+#[cfg_attr(any(target_os = "macos", target_os = "windows"), allow(dead_code))]
 pub enum ShortcutEvent {
     Pressed(Global),
     Refused(Global, ShortcutError),

@@ -81,7 +81,9 @@ enum Source {
 
 pub fn selected_text() -> Option<String> {
     let (source, text) = match access() {
-        Access::Missing => (Source::Clipboard, pasteboard_text(&NSPasteboard::generalPasteboard())),
+        Access::Missing | Access::NoKeyboard => {
+            (Source::Clipboard, pasteboard_text(&NSPasteboard::generalPasteboard()))
+        }
         Access::Granted => match focused_selection() {
             Some(text) => (Source::FocusedApp, Some(text)),
             None => (Source::PressedCopy, copied_selection()),

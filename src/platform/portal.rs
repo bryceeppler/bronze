@@ -48,7 +48,7 @@ async fn serve(on: &OnShortcut) -> Result<(), ShortcutError> {
     let wanted: Vec<(&str, HashMap<&str, Variant>)> = Global::ALL
         .iter()
         .map(|global| {
-            let trigger = Variant::from(global.portal_trigger());
+            let trigger = Variant::from(trigger(*global));
             (
                 global.id(),
                 HashMap::from([("description", Variant::from(global.what())), ("preferred_trigger", trigger)]),
@@ -87,6 +87,11 @@ async fn register_app_id(connection: &Connection) {
     if let Err(error) = registered {
         eprintln!("bronze: the desktop portal did not take Bronze's app id: {error}");
     }
+}
+
+fn trigger(global: Global) -> String {
+    let (modifiers, key) = global.chord().rsplit_once('+').unwrap_or(("", global.chord()));
+    modifiers.split('+').filter(|m| !m.is_empty()).map(|m| m.to_uppercase() + "+").collect::<String>() + key
 }
 
 async fn request<B>(
@@ -143,5 +148,17 @@ fn refusal(error: zbus::Error) -> ShortcutError {
             ShortcutError::PermissionDenied
         }
         _ => ShortcutError::Backend(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trigger;
+    use crate::ui::Global;
+
+    #[test]
+    fn the_desktop_portal_is_asked_for_the_same_keys_as_the_chords() {
+        assert_eq!(trigger(Global::Capture), "CTRL+ALT+c");
+        assert_eq!(trigger(Global::ShowOrHide), "CTRL+ALT+space");
     }
 }

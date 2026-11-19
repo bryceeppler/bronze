@@ -786,9 +786,3 @@ fn a_launch_by_the_show_or_hide_link_shows_bronze_and_later_ones_toggle() {
     p.open_link("bronze://show-or-hide");
     assert_eq!(p.rt.state.panel, Shown::Hidden);
 }
-
-#[test]
-fn the_desktop_portal_is_asked_for_the_same_keys_as_the_chords() {
-    assert_eq!(Global::Capture.portal_trigger(), "CTRL+ALT+c");
-    assert_eq!(Global::ShowOrHide.portal_trigger(), "CTRL+ALT+space");
-}
