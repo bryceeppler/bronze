@@ -786,3 +786,13 @@ fn a_launch_by_the_show_or_hide_link_shows_bronze_and_later_ones_toggle() {
     p.open_link("bronze://show-or-hide");
     assert_eq!(p.rt.state.panel, Shown::Hidden);
 }
+
+#[test]
+fn a_bindable_command_reaches_this_data_folder_and_survives_spaces_and_quotes() {
+    use super::commands::command;
+    assert_eq!(command("bronze", None, Global::Capture), "bronze bronze://capture");
+    assert_eq!(
+        command("/opt/My Apps/bronze", Some(Path::new("/home/me/it's notes")), Global::ShowOrHide),
+        r"'/opt/My Apps/bronze' --data '/home/me/it'\''s notes' bronze://show-or-hide"
+    );
+}

@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::LazyLock;
 
 use rune::{KeyEvent, KeyPlatform, Keybind, Tx};
@@ -156,9 +157,19 @@ static BRONZE: LazyLock<String> = LazyLock::new(|| {
     if on_path { "bronze".to_owned() } else { running.display().to_string() }
 });
 
-pub fn bindable() -> Vec<(String, &'static str)> {
+pub fn bindable(data: Option<&Path>) -> Vec<(String, &'static str)> {
     if KeyPlatform::current() != KeyPlatform::Linux {
         return Vec::new();
     }
-    Global::ALL.map(|global| (format!("{} {}", *BRONZE, global.link()), global.what())).into()
+    Global::ALL.map(|global| (command(&BRONZE, data, global), global.what())).into()
+}
+
+pub fn command(bronze: &str, data: Option<&Path>, global: Global) -> String {
+    let data = data.map(|dir| format!(" --data {}", shell_word(&dir.to_string_lossy()))).unwrap_or_default();
+    format!("{}{data} {}", shell_word(bronze), global.link())
+}
+
+fn shell_word(word: &str) -> String {
+    let plain = !word.is_empty() && word.chars().all(|c| c.is_ascii_alphanumeric() || "/._-+:@%=,".contains(c));
+    if plain { word.to_owned() } else { format!("'{}'", word.replace('\'', r"'\''")) }
 }

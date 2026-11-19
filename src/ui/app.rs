@@ -10,7 +10,7 @@ use super::window::Window;
 use crate::board::{Board, Note, NoteId, Owner, Place, Scope, SectionId, Submitted};
 use crate::platform::{Access, Platform, ShortcutEvent};
 use crate::prefs::Prefs;
-use crate::store::Store;
+use crate::store::{self, Store};
 use crate::sync::{Delivery, Setup, Status, SyncCode, Syncing};
 
 const NOTICE_SECONDS: f64 = 2.5;
@@ -155,6 +155,11 @@ impl App {
 
     pub fn notes_path(&self) -> Option<&Path> {
         self.notes.path()
+    }
+
+    pub fn custom_data_dir(&self) -> Option<&Path> {
+        let dir = self.notes.path()?.parent()?;
+        (store::data_dir().as_deref() != Some(dir)).then_some(dir)
     }
 
     fn set_prefs(&mut self, change: impl FnOnce(&mut Prefs)) {

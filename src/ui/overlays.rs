@@ -174,7 +174,7 @@ fn shortcuts(s: &App, look: &Look) -> El {
             .child(text(what).font(BODY).color(look.text))
             .child(text(command).font(type_::LABEL).color(look.muted).wrap())
     };
-    let bindable = commands::bindable();
+    let bindable = commands::bindable(s.custom_data_dir());
     let mut rows = col()
         .key("shortcut-rows")
         .px(14.0)

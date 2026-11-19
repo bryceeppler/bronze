@@ -17,14 +17,17 @@ const BTN_LEFT: u16 = 0x110;
 static HEARS_KEYBOARD: AtomicBool = AtomicBool::new(false);
 
 fn wayland() -> bool {
-    std::env::var_os("WAYLAND_DISPLAY").is_some()
+    ["WAYLAND_DISPLAY", "WAYLAND_SOCKET"]
+        .into_iter()
+        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
 }
 
 pub fn bind_shortcuts(on: OnShortcut) -> bool {
-    if wayland() {
+    let wayland = wayland();
+    if wayland {
         super::portal::bind(on);
     }
-    wayland()
+    wayland
 }
 
 pub fn listen(on_gesture: impl Fn(Gesture) + Send + 'static) {
