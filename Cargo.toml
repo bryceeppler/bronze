@@ -38,3 +38,6 @@ accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "cca5df6faf
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[workspace]
+members = ["wire"]
