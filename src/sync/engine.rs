@@ -239,7 +239,7 @@ impl Line {
     }
 
     fn push(&self, precondition: Precondition, sealed: &[u8]) -> Option<Result<Pushed, Failure>> {
-        self.unless_halted(|remote| remote.push(precondition, sealed))
+        self.unless_halted(|remote| remote.push(precondition, sealed, || !self.halt.halted()))
     }
 
     fn unless_halted<T>(&self, request: impl FnOnce(&Remote) -> T) -> Option<T> {

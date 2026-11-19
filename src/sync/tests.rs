@@ -151,7 +151,7 @@ fn written_within(code: &SyncCode, seen: Version, wait: Duration) -> bool {
 
 fn replace(remote: &Remote, sealed: &[u8]) -> Version {
     let (version, _) = stored(remote);
-    match remote.push(Precondition::Replace(version), sealed) {
+    match remote.push(Precondition::Replace(version), sealed, || true) {
         Ok(Pushed::Written(version)) => version,
         other => panic!("the server kept its board: {other:?}"),
     }
