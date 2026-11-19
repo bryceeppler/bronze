@@ -61,16 +61,20 @@ Run it again to update.
 Pass `--autostart` to also start Bronze at login, and `--uninstall` to remove what it installed.
 Uninstalling keeps your notes in `~/.local/share/bronze`.
 
-On X11, everything works except the Shift gestures, which Linux does not have yet, so use `Ctrl+Alt+C` and `Ctrl+Alt+Space`.
-On Wayland, Bronze starts, and the rest is untested.
-Its global shortcuts need the desktop's global shortcuts portal, and capture needs a compositor that shares the selected text with other apps.
+On X11, everything works, the Shift gestures included.
+On Wayland, the gestures need Bronze to read the keyboard itself, which only members of the `input` group may do: run `sudo usermod -aG input $USER`, then log out and back in.
+That group lets every program you run read your keystrokes, so it is your call; without it Bronze says the gestures are off and points to Keyboard Shortcuts.
+`Ctrl+Alt+C` and `Ctrl+Alt+Space` go through the desktop's global shortcuts portal on Wayland, which asks you once to allow them; GNOME and KDE Plasma both have one.
+Where the portal is missing, bind your own shortcut in the desktop's keyboard settings to `bronze bronze://capture` or `bronze bronze://show-or-hide`.
+On GNOME's Wayland session, capture usually finds nothing, because GNOME does not share the selected text with an app in the background.
+KDE Plasma does, and so does X11.
 
 ## Shortcuts
 
 | Action | Shortcut |
 | --- | --- |
-| Capture the selected text, from any app | `Ctrl+Alt+C`, or double-tap Left Shift on the Mac and Windows |
-| Show or hide Bronze, from any app | `Ctrl+Alt+Space`, or Right Shift + Left Shift on the Mac and Windows |
+| Capture the selected text, from any app | `Ctrl+Alt+C`, or double-tap Left Shift |
+| Show or hide Bronze, from any app | `Ctrl+Alt+Space`, or Right Shift + Left Shift |
 | Create or open a section | type `# Name` |
 | Go to a section | `Ctrl/Cmd+K` |
 | Copy the selected notes | `Ctrl/Cmd+C` |
@@ -105,7 +109,7 @@ With sync off, Bronze opens no network connection.
 
 ```sh
 ./scripts/check.sh        # format, lint, tests, every scene rendered headless, scripted runs
-./scripts/real-window.sh  # a real window under Xvfb: capture, show and hide, remembered position
+./scripts/real-window.sh  # a real window under Xvfb: capture, show and hide, remembered position, Shift gestures, bronze:// links
 ./scripts/sync-check.sh   # two real windows and a real bronze-sync: setup, live edits, offline edits, a wiped server
 ./scripts/server-check.sh binary  # bronze-sync built and driven with curl; `docker <image>` runs the same cases on an image
 ./scripts/linux-app-check.sh  # install into a temp home, launch from the launcher entry under Xvfb, capture, uninstall

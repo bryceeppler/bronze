@@ -5,6 +5,7 @@ use rune::{AppHandle, ShortcutError, Tx, WindowHandle};
 
 use super::app::App;
 use super::commands::Global;
+use crate::platform::OnShortcut;
 use crate::prefs::Frame;
 
 #[derive(Clone)]
@@ -46,6 +47,11 @@ impl Window {
     pub fn waker(&self) -> impl Fn() + Send + 'static {
         let app = self.app.clone();
         move || app.wake()
+    }
+
+    pub fn on_shortcut(&self) -> OnShortcut {
+        let app = self.app.clone();
+        Box::new(move |event| app.update(move |s, tx| s.shortcut(event, tx)))
     }
 
     pub fn register(&self, global: Global) -> Result<(), ShortcutError> {

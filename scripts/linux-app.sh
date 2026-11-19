@@ -59,7 +59,7 @@ Icon=ca.bryce.bronze
 Terminal=false
 Categories=Utility;
 Keywords=notes;clipboard;capture;prompts;
-StartupWMClass=bronze
+StartupWMClass=ca.bryce.bronze
 ENTRY
 
 place target/release/bronze "$bin" 755

@@ -56,7 +56,7 @@ app=$(xdotool getwindowpid "$window")
 pids+=("$app")
 [ "$(readlink "/proc/$app/exe")" = "$HOME/.local/bin/bronze" ] && pass "the launcher entry started the installed binary" \
   || fail "the window belongs to $(readlink "/proc/$app/exe")"
-[ "$(xprop -id "$window" WM_CLASS)" = 'WM_CLASS(STRING) = "bronze", "bronze"' ] && pass "its WM_CLASS matches StartupWMClass=bronze" \
+[ "$(xprop -id "$window" WM_CLASS)" = 'WM_CLASS(STRING) = "ca.bryce.bronze", "ca.bryce.bronze"' ] && pass "its WM_CLASS matches StartupWMClass=ca.bryce.bronze" \
   || fail "WM_CLASS is $(xprop -id "$window" WM_CLASS)"
 
 python3 scripts/own-primary.py "Selected after installing" &

@@ -1,3 +1,6 @@
+use std::path::Path;
+use std::sync::LazyLock;
+
 use rune::{KeyEvent, KeyPlatform, Keybind, Tx};
 
 use super::app::App;
@@ -22,6 +25,8 @@ const BINDINGS: [(Command, &str, &str); 6] = [
     (Command::Escape, "escape", "Clear the selection, or hide Bronze"),
 ];
 
+const LINK_SCHEME: &str = "bronze://";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Global {
     Capture,
@@ -30,6 +35,25 @@ pub enum Global {
 
 impl Global {
     pub const ALL: [Global; 2] = [Global::Capture, Global::ShowOrHide];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Global::Capture => "capture",
+            Global::ShowOrHide => "show-or-hide",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Global> {
+        Global::ALL.into_iter().find(|global| global.id() == id)
+    }
+
+    pub fn link(self) -> String {
+        format!("{LINK_SCHEME}{}", self.id())
+    }
+
+    pub fn from_link(link: &str) -> Option<Global> {
+        Global::from_id(link.strip_prefix(LINK_SCHEME)?.trim_end_matches('/'))
+    }
 
     pub fn chord(self) -> &'static str {
         match self {
@@ -116,14 +140,36 @@ pub fn cheat_sheet() -> Vec<(String, &'static str)> {
     .collect()
 }
 
-pub fn anywhere() -> Vec<(String, &'static str)> {
-    let gestures = match KeyPlatform::current() {
-        KeyPlatform::Mac | KeyPlatform::Windows => Global::ALL.as_slice(),
-        KeyPlatform::Linux => &[],
-    };
+pub fn anywhere(hears_gestures: bool) -> Vec<(String, &'static str)> {
+    let gestures = if hears_gestures { Global::ALL.as_slice() } else { &[] };
     gestures
         .iter()
         .map(|global| (gesture_label(global.gesture()).to_owned(), global.what()))
         .chain(Global::ALL.map(|global| (label(global.chord()), global.what())))
         .collect()
+}
+
+static BRONZE: LazyLock<String> = LazyLock::new(|| {
+    let Ok(running) = std::env::current_exe() else { return "bronze".to_owned() };
+    let on_path = std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path).any(|dir| dir.join("bronze").canonicalize().is_ok_and(|found| found == running))
+    });
+    if on_path { "bronze".to_owned() } else { running.display().to_string() }
+});
+
+pub fn bindable(data: Option<&Path>) -> Vec<(String, &'static str)> {
+    if KeyPlatform::current() != KeyPlatform::Linux {
+        return Vec::new();
+    }
+    Global::ALL.map(|global| (command(&BRONZE, data, global), global.what())).into()
+}
+
+pub fn command(bronze: &str, data: Option<&Path>, global: Global) -> String {
+    let data = data.map(|dir| format!(" --data {}", shell_word(&dir.to_string_lossy()))).unwrap_or_default();
+    format!("{}{data} {}", shell_word(bronze), global.link())
+}
+
+fn shell_word(word: &str) -> String {
+    let plain = !word.is_empty() && word.chars().all(|c| c.is_ascii_alphanumeric() || "/._-+:@%=,".contains(c));
+    if plain { word.to_owned() } else { format!("'{}'", word.replace('\'', r"'\''")) }
 }

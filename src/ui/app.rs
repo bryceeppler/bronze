@@ -8,9 +8,9 @@ use rune::{Mods, PointerPress, ShortcutError, TextEdit, Tx};
 use super::commands::{self, Global};
 use super::window::Window;
 use crate::board::{Board, Note, NoteId, Owner, Place, Scope, SectionId, Submitted};
-use crate::platform::{Access, Platform};
+use crate::platform::{Access, Platform, ShortcutEvent};
 use crate::prefs::Prefs;
-use crate::store::Store;
+use crate::store::{self, Store};
 use crate::sync::{Delivery, Setup, Status, SyncCode, Syncing};
 
 const NOTICE_SECONDS: f64 = 2.5;
@@ -32,6 +32,7 @@ pub struct App {
     pub panel: Panel,
     nothing_selected_until: Option<f64>,
     unavailable: Vec<(Global, ShortcutError)>,
+    launch_link: Option<Global>,
     pub composer: TextEdit,
     pub search: TextEdit,
     pub overlay_field: TextEdit,
@@ -51,6 +52,7 @@ pub struct Saved {
 pub enum Notice<'a> {
     NothingSelected,
     NeedsAccess,
+    GesturesOff,
     Unavailable(Global, &'a ShortcutError),
 }
 
@@ -128,6 +130,7 @@ impl App {
             panel: Panel::Shown,
             nothing_selected_until: None,
             unavailable: Vec::new(),
+            launch_link: None,
             composer: focused_field(""),
             search: TextEdit::new(""),
             overlay_field: TextEdit::new(""),
@@ -135,6 +138,11 @@ impl App {
             overlay: Overlay::None,
             dragging: None,
         }
+    }
+
+    pub fn launched_with(mut self, link: Option<Global>) -> App {
+        self.launch_link = link;
+        self
     }
 
     pub fn scope(&self) -> Scope {
@@ -147,6 +155,11 @@ impl App {
 
     pub fn notes_path(&self) -> Option<&Path> {
         self.notes.path()
+    }
+
+    pub fn custom_data_dir(&self) -> Option<&Path> {
+        let dir = self.notes.path()?.parent()?;
+        (store::data_dir().as_deref() != Some(dir)).then_some(dir)
     }
 
     fn set_prefs(&mut self, change: impl FnOnce(&mut Prefs)) {
@@ -164,6 +177,9 @@ impl App {
     }
 
     pub fn register_shortcuts(&mut self) {
+        if self.platform.bind_shortcuts(self.window.on_shortcut()) {
+            return;
+        }
         for global in Global::ALL {
             if let Err(error) = self.window.register(global) {
                 self.shortcut_unavailable(global, error);
@@ -174,6 +190,23 @@ impl App {
     pub fn shortcut_unavailable(&mut self, global: Global, error: ShortcutError) {
         eprintln!("bronze: cannot register {}: {error}", global.chord());
         self.unavailable.push((global, error));
+    }
+
+    pub fn shortcut(&mut self, event: ShortcutEvent, tx: &mut Tx) {
+        match event {
+            ShortcutEvent::Pressed(global) => self.global(global, tx),
+            ShortcutEvent::Refused(global, error) => self.shortcut_unavailable(global, error),
+        }
+    }
+
+    pub fn open_link(&mut self, link: &str, tx: &mut Tx) {
+        let Some(global) = Global::from_link(link) else {
+            return eprintln!("bronze: ignoring the link {link}");
+        };
+        match (global, self.launch_link.take() == Some(global)) {
+            (Global::ShowOrHide, true) => self.show_panel(tx),
+            _ => self.global(global, tx),
+        }
     }
 
     pub fn global(&mut self, global: Global, tx: &mut Tx) {
@@ -240,10 +273,20 @@ impl App {
         if self.nothing_selected_until.is_some() {
             return Some(Notice::NothingSelected);
         }
-        if self.access == Access::Missing {
-            return Some(Notice::NeedsAccess);
+        match self.access {
+            Access::Missing => return Some(Notice::NeedsAccess),
+            Access::NoKeyboard if !self.prefs.dismissed_gestures_notice => return Some(Notice::GesturesOff),
+            Access::Granted | Access::NoKeyboard => {}
         }
         self.unavailable.first().map(|(global, error)| Notice::Unavailable(*global, error))
+    }
+
+    pub fn hears_gestures(&self) -> bool {
+        self.access == Access::Granted
+    }
+
+    pub fn dismiss_gestures_notice(&mut self) {
+        self.set_prefs(|prefs| prefs.dismissed_gestures_notice = true);
     }
 
     pub fn hide_panel(&mut self) {
@@ -574,6 +617,9 @@ impl Notice<'_> {
             Notice::NeedsAccess => {
                 "Bronze needs Accessibility access to capture selected text and to respond to double-tap Shift."
                     .to_owned()
+            }
+            Notice::GesturesOff => {
+                "Shift gestures are off because Bronze can't read the keyboard in this session.".to_owned()
             }
             Notice::Unavailable(global, error) => {
                 let (name, chord) = (global.name(), commands::label(global.chord()));

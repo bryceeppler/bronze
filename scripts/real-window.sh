@@ -66,3 +66,42 @@ timeout 10 target/debug/bronze --data "$data" > out/real-window-second.log 2>&1 
 wait_for '[ "$(map_state)" = IsViewable ]' && pass "and brought the running panel back" || fail "second launch: map state $(map_state)"
 xdotool key ctrl+alt+space
 wait_for '[ "$(map_state)" = IsUnMapped ]' && pass "which one press of the chord hides again" || fail "hide after a second launch"
+
+# xdotool sends a second release for a modifier it lets go of, which no keyboard does, so taps go through XTest directly.
+shifts() {
+  python3 - "$@" << 'PY'
+import ctypes, sys, time
+x11, xtest = ctypes.CDLL("libX11.so.6"), ctypes.CDLL("libXtst.so.6")
+x11.XOpenDisplay.restype = ctypes.c_void_p
+display = ctypes.c_void_p(x11.XOpenDisplay(None))
+for step in sys.argv[1:]:
+    key, _, state = step.partition(":")
+    xtest.XTestFakeKeyEvent(display, {"left": 50, "right": 62}[key], state == "down", 0)
+    x11.XFlush(display)
+    time.sleep(0.05)
+PY
+}
+select_text() {
+  python3 scripts/own-primary.py "$1" &
+  pids+=($!)
+  sleep 0.5
+}
+captured() { wait_for "grep -q '$1' '$data/notes.json' 2> /dev/null"; }
+
+xprop -id "$window" WM_CLASS | grep -q '"ca.bryce.bronze"' && pass "the window's class is ca.bryce.bronze" || fail "WM_CLASS $(xprop -id "$window" WM_CLASS)"
+grep -q "listening for Shift gestures" out/real-window.log && pass "Bronze listens for Shift gestures on X11" || fail "no Shift listener"
+shifts right:down left:down left:up right:up
+wait_for '[ "$(map_state)" = IsViewable ]' && pass "Right Shift + Left Shift showed the panel" || fail "both Shifts: map state $(map_state)"
+select_text "Picked by a double Left Shift"
+shifts left:down left:up left:down left:up
+captured "Picked by a double Left Shift" && pass "double-tap Left Shift captured the PRIMARY selection" || fail "double tap: no captured note"
+shifts left:down left:up right:down right:up left:down left:up
+shifts right:down left:down left:up right:up
+wait_for '[ "$(map_state)" = IsUnMapped ]' && pass "Right Shift + Left Shift hid the panel" || fail "both Shifts: map state $(map_state)"
+[ "$(grep -c 'Picked by a double' "$data/notes.json")" = 1 ] && pass "taps of different Shifts captured nothing more" || fail "mixed taps captured"
+
+timeout 10 target/debug/bronze --data "$data" bronze://show-or-hide > out/real-window-link.log 2>&1 || fail "the show-or-hide link: launch failed"
+wait_for '[ "$(map_state)" = IsViewable ]' && pass "bronze bronze://show-or-hide showed the running panel" || fail "link show: map state $(map_state)"
+select_text "Picked by a bound key"
+timeout 10 target/debug/bronze --data "$data" bronze://capture >> out/real-window-link.log 2>&1 || fail "the capture link: launch failed"
+captured "Picked by a bound key" && pass "bronze bronze://capture captured the PRIMARY selection" || fail "capture link: no captured note"

@@ -37,7 +37,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{PCWSTR, w};
 
-use super::Access;
+use super::{Access, OnShortcut};
 use crate::taps::{Detector, Gesture, Input, Side, TAP_WINDOW};
 
 const AUTOMATION_TIMEOUT_MS: u32 = 300;
@@ -50,6 +50,10 @@ const MODIFIERS: [VIRTUAL_KEY; 5] = [VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_
 const BUTTONS: [VIRTUAL_KEY; 5] = [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2];
 const BUTTON_POLL_MS: u32 = 10;
 const RIGHT_SHIFT_SCAN: u32 = 0x36;
+
+pub fn bind_shortcuts(_: OnShortcut) -> bool {
+    false
+}
 
 pub fn access() -> Access {
     Access::Granted

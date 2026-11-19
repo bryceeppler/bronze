@@ -40,6 +40,20 @@ pub const SCENES: &[Scene] = &[
         platform.set_access(Access::Missing);
         s.use_platform(Rc::new(platform));
     }),
+    ("gestures-off", |s| {
+        notes(s);
+        let platform = Fake::default();
+        platform.set_access(Access::NoKeyboard);
+        s.use_platform(Rc::new(platform));
+    }),
+    ("shortcuts-gestures-off", |s| {
+        sections(s);
+        s.composer.focused = false;
+        let platform = Fake::default();
+        platform.set_access(Access::NoKeyboard);
+        s.use_platform(Rc::new(platform));
+        s.overlay = Overlay::Shortcuts;
+    }),
     ("menu", |s| {
         sections(s);
         s.composer.focused = false;
