@@ -113,6 +113,8 @@ pub struct PrefsFile {
     keep_on_top: bool,
     scope: ScopeEntry,
     frame: Option<FrameEntry>,
+    #[serde(default)]
+    dismissed_gestures_notice: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -484,6 +486,7 @@ impl Document for Prefs {
                 width: f.size.0,
                 height: f.size.1,
             }),
+            dismissed_gestures_notice: self.dismissed_gestures_notice,
         }
     }
 
@@ -495,6 +498,7 @@ impl Document for Prefs {
                 ScopeEntry::Active => Scope::Active,
             },
             frame: file.frame.map(|f| Frame { position: (f.x, f.y), size: (f.width, f.height) }),
+            dismissed_gestures_notice: file.dismissed_gestures_notice,
         }
     }
 }

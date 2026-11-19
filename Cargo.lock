@@ -477,6 +477,7 @@ dependencies = [
  "chacha20poly1305",
  "directories",
  "fastrand",
+ "futures-util",
  "getrandom 0.4.3",
  "hkdf",
  "objc2 0.6.5",
@@ -490,8 +491,11 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "tokio",
  "ureq",
  "windows",
+ "x11rb",
+ "zbus 6.3.0",
 ]
 
 [[package]]

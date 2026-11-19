@@ -120,19 +120,33 @@ pub fn notice(s: &App, look: &Look) -> Option<El> {
     let frame = |el: El| el.key("notice").role("status").mt(8.0).fill(look.raised).border(look.hair, look.card_border);
     Some(match notice {
         Notice::NeedsAccess => {
-            frame(col()).w_full().radius(16.0).px(12.0).py(10.0).gap(8.0).child(words.wrap()).child(open_settings(look))
+            frame(col()).w_full().radius(16.0).px(12.0).py(10.0).gap(8.0).child(words.wrap()).child(notice_button(
+                "open-settings",
+                "Open Settings",
+                look,
+                |s| s.ask_for_access(),
+            ))
         }
+        Notice::GesturesOff => frame(col()).w_full().radius(16.0).px(12.0).py(10.0).gap(8.0).child(words.wrap()).child(
+            row()
+                .gap(8.0)
+                .child(notice_button("show-shortcuts", "Keyboard Shortcuts", look, |s| {
+                    s.dismiss_gestures_notice();
+                    s.overlay = Overlay::Shortcuts;
+                }))
+                .child(notice_button("dismiss-notice", "Dismiss", look, App::dismiss_gestures_notice)),
+        ),
         Notice::NothingSelected | Notice::Unavailable(..) => {
             frame(row()).self_center().h(26.0).radius(13.0).px(12.0).center_y().child(words)
         }
     })
 }
 
-fn open_settings(look: &Look) -> El {
+fn notice_button(key: &str, label: &str, look: &Look, on_press: fn(&mut App)) -> El {
     row()
-        .key("open-settings")
+        .key(key)
         .role("button")
-        .label("Open Settings")
+        .label(label)
         .self_start()
         .h(26.0)
         .px(12.0)
@@ -141,8 +155,8 @@ fn open_settings(look: &Look) -> El {
         .fill(look.field)
         .border(look.hair, look.field_border)
         .cursor(Cursor::Pointer)
-        .on_press(|s: &mut App| s.ask_for_access())
-        .child(text("Open Settings").font(type_::LABEL).color(look.text))
+        .on_press(on_press)
+        .child(text(label).font(type_::LABEL).color(look.text))
 }
 
 pub fn composer(s: &App, look: &Look) -> El {

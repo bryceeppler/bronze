@@ -5,6 +5,7 @@ pub struct Prefs {
     pub keep_on_top: bool,
     pub scope: Scope,
     pub frame: Option<Frame>,
+    pub dismissed_gestures_notice: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -15,6 +16,6 @@ pub struct Frame {
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { keep_on_top: true, scope: Scope::All, frame: None }
+        Prefs { keep_on_top: true, scope: Scope::All, frame: None, dismissed_gestures_notice: false }
     }
 }

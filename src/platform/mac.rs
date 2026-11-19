@@ -19,7 +19,7 @@ use objc2_core_graphics::{
 };
 use objc2_foundation::{NSArray, NSData, NSString};
 
-use super::Access;
+use super::{Access, OnShortcut};
 use crate::taps::{Detector, Gesture, Input, Side};
 
 const AX_TIMEOUT_SECONDS: f32 = 0.3;
@@ -44,6 +44,10 @@ unsafe extern "C" {
     fn AXUIElementCreateSystemWide() -> NonNull<CFType>;
     fn AXUIElementSetMessagingTimeout(element: &CFType, seconds: f32) -> i32;
     fn AXUIElementCopyAttributeValue(element: &CFType, attribute: &CFString, value: *mut *mut CFType) -> i32;
+}
+
+pub fn bind_shortcuts(_: OnShortcut) -> bool {
+    false
 }
 
 pub fn access() -> Access {

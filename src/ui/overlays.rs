@@ -32,7 +32,7 @@ pub fn mount(s: &App, look: &Look, kit: &Kit, layer: &mut Vec<El>) {
             layer.push(anchor);
         }
         &Overlay::Switcher { picked } => layer.push(sheet(switcher(s, picked, look), look)),
-        Overlay::Shortcuts => layer.push(sheet(shortcuts(look), look)),
+        Overlay::Shortcuts => layer.push(sheet(shortcuts(s, look), look)),
         Overlay::Sync(setup) => layer.push(sheet(sync_sheet::view(s, setup, look), look)),
         Overlay::None | Overlay::Menu | Overlay::Rename(_) => {}
     }
@@ -151,7 +151,7 @@ fn switcher_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
     true
 }
 
-fn shortcuts(look: &Look) -> El {
+fn shortcuts(s: &App, look: &Look) -> El {
     let shortcut_row = |(keys, what): (String, &'static str)| {
         row()
             .h(28.0)
@@ -160,21 +160,43 @@ fn shortcuts(look: &Look) -> El {
             .child(text(what).font(BODY).color(look.text).grow(1.0).truncate())
             .child(text(keys).font(type_::LABEL).color(look.muted))
     };
-    let anywhere = row()
-        .h(28.0)
-        .mt(6.0)
-        .center_y()
-        .child(text("From any app").font(SECTION_LABEL).color(look.label).text_case(TextCase::Uppercase));
-    let rows = col()
+    let heading = |title: &str| {
+        row()
+            .h(28.0)
+            .mt(6.0)
+            .center_y()
+            .child(text(title).font(SECTION_LABEL).color(look.label).text_case(TextCase::Uppercase))
+    };
+    let command_row = |(command, what): (String, &'static str)| {
+        col()
+            .py(4.0)
+            .gap(2.0)
+            .child(text(what).font(BODY).color(look.text))
+            .child(text(command).font(type_::LABEL).color(look.muted).wrap())
+    };
+    let bindable = commands::bindable();
+    let mut rows = col()
         .key("shortcut-rows")
         .px(14.0)
         .pb(10.0)
         .children(commands::cheat_sheet().into_iter().map(shortcut_row))
-        .child(anywhere)
-        .children(commands::anywhere().into_iter().map(shortcut_row));
+        .child(heading("From any app"))
+        .children(commands::anywhere(s.hears_gestures()).into_iter().map(shortcut_row));
+    if !bindable.is_empty() {
+        rows = rows
+            .child(heading("Your own keys"))
+            .child(
+                text("Bind a shortcut in your desktop's keyboard settings to one of these commands.")
+                    .font(type_::LABEL)
+                    .color(look.muted)
+                    .wrap()
+                    .pb(4.0),
+            )
+            .children(bindable.into_iter().map(command_row));
+    }
     col()
         .key("shortcuts")
         .child(row().h(40.0).px(14.0).center_y().child(text("Keyboard Shortcuts").font(type_::TITLE).color(look.text)))
         .child(el().w_full().h(look.hair).fill(look.hairline).mb(4.0))
-        .child(rows)
+        .child(col().shrink().min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(rows))
 }

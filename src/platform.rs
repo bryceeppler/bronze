@@ -6,16 +6,28 @@ use std::thread;
 #[cfg_attr(target_os = "windows", path = "platform/windows.rs")]
 #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), path = "platform/unix.rs")]
 mod os;
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+mod portal;
 
 pub use os::listen;
-use os::{access, ask_for_access, reveal_command, selected_text};
+use os::{access, ask_for_access, bind_shortcuts, reveal_command, selected_text};
+use rune::ShortcutError;
+
+use crate::ui::Global;
 
 pub type Reply = Box<dyn FnOnce(Option<String>) + Send>;
+pub type OnShortcut = Box<dyn Fn(ShortcutEvent) + Send>;
+
+pub enum ShortcutEvent {
+    Pressed(Global),
+    Refused(Global, ShortcutError),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Access {
     Granted,
     Missing,
+    NoKeyboard,
 }
 
 pub trait Platform {
@@ -23,6 +35,7 @@ pub trait Platform {
     fn reveal(&self, path: &Path);
     fn access(&self) -> Access;
     fn ask_for_access(&self);
+    fn bind_shortcuts(&self, on: OnShortcut) -> bool;
 }
 
 pub struct Native;
@@ -50,6 +63,10 @@ impl Platform for Native {
 
     fn ask_for_access(&self) {
         ask_for_access();
+    }
+
+    fn bind_shortcuts(&self, on: OnShortcut) -> bool {
+        bind_shortcuts(on)
     }
 }
 
@@ -111,5 +128,9 @@ impl Platform for Fake {
 
     fn ask_for_access(&self) {
         self.asked.set(self.asked.get() + 1);
+    }
+
+    fn bind_shortcuts(&self, _: OnShortcut) -> bool {
+        false
     }
 }

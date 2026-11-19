@@ -43,16 +43,29 @@ impl Panel {
     }
 
     fn lacking_access() -> Panel {
+        Panel::with_access(Access::Missing)
+    }
+
+    fn with_access(access: Access) -> Panel {
         let platform = Fake::default();
-        platform.set_access(Access::Missing);
+        platform.set_access(access);
         Panel::on(Panel::blank(), platform)
     }
 
+    fn open_link(&mut self, link: &str) {
+        self.rt.update(|s, tx| s.open_link(link, tx));
+        self.settle();
+    }
+
     fn on(saved: Saved, platform: Fake) -> Panel {
+        Panel::launched(saved, platform, None)
+    }
+
+    fn launched(saved: Saved, platform: Fake, link: Option<Global>) -> Panel {
         let platform = Rc::new(platform);
         let unbound = rune::App::new(AppSpec::new("Bronze", (360.0, 640.0), || unreachable!(), view)).handle();
         let mut rt = Runtime::new(
-            App::new(saved, platform.clone(), Window::new(unbound)),
+            App::new(saved, platform.clone(), Window::new(unbound)).launched_with(link),
             view,
             (360.0, 640.0),
             Env { system_dark: false, scale: 2.0 },
@@ -715,4 +728,67 @@ fn a_saved_sync_json_resumes_syncing_at_the_next_launch() {
     let (mut again, _) = on_folder(dir.path());
     assert_eq!(again.rt.state.sync_code().map(|shown| shown.reveal()), Some(code));
     frames_until(&mut again, "the relaunch synced", |s| s.sync_status() == Status::Synced);
+}
+
+#[test]
+fn without_the_keyboard_the_gestures_notice_points_to_the_shortcuts_and_stays_dismissed() {
+    let mut p = Panel::with_access(Access::NoKeyboard);
+    assert!(p.reads("Shift gestures are off because Bronze can't read the keyboard in this session."));
+    p.click(p.at("show-shortcuts"), PLAIN);
+    assert!(p.rt.find("shortcuts").is_some());
+    assert!(!p.reads("Double-tap Left Shift"));
+    assert!(p.reads("Capture selected text"));
+    p.key(Key::Escape, PLAIN);
+    settle_for(&mut p, 1.5);
+    assert!(p.rt.find("notice").is_none());
+}
+
+#[test]
+fn dismissing_the_gestures_notice_leaves_other_notices_working() {
+    let mut p = Panel::with_access(Access::NoKeyboard);
+    p.click(p.at("dismiss-notice"), PLAIN);
+    assert!(p.rt.find("notice").is_none());
+    p.platform.select(None);
+    p.press(Global::Capture);
+    assert!(p.reads("Nothing is selected to capture"));
+}
+
+#[test]
+fn the_shortcuts_sheet_lists_the_shift_gestures_only_when_bronze_hears_them() {
+    let mut p = Panel::new();
+    p.click(p.at("more"), PLAIN);
+    p.click(p.menu_item("Keyboard Shortcuts"), PLAIN);
+    assert!(p.reads("Double-tap Left Shift"));
+    assert!(p.reads("Right Shift + Left Shift"));
+}
+
+#[test]
+fn links_capture_and_toggle_like_the_shortcuts_and_unknown_ones_do_nothing() {
+    let mut p = Panel::new();
+    p.platform.select(Some("picked by a bound key"));
+    p.open_link("bronze://capture");
+    assert_eq!(p.texts(), ["picked by a bound key"]);
+    p.open_link("bronze://show-or-hide");
+    assert_eq!(p.rt.state.panel, Shown::Hidden);
+    p.open_link("bronze://show-or-hide/");
+    assert_eq!(p.rt.state.panel, Shown::Shown);
+    p.open_link("bronze://quit");
+    p.open_link("https://example.com/capture");
+    assert_eq!(p.texts(), ["picked by a bound key"]);
+    assert_eq!(p.rt.state.panel, Shown::Shown);
+}
+
+#[test]
+fn a_launch_by_the_show_or_hide_link_shows_bronze_and_later_ones_toggle() {
+    let mut p = Panel::launched(Panel::blank(), Fake::default(), Some(Global::ShowOrHide));
+    p.open_link("bronze://show-or-hide");
+    assert_eq!(p.rt.state.panel, Shown::Shown);
+    p.open_link("bronze://show-or-hide");
+    assert_eq!(p.rt.state.panel, Shown::Hidden);
+}
+
+#[test]
+fn the_desktop_portal_is_asked_for_the_same_keys_as_the_chords() {
+    assert_eq!(Global::Capture.portal_trigger(), "CTRL+ALT+c");
+    assert_eq!(Global::ShowOrHide.portal_trigger(), "CTRL+ALT+space");
 }

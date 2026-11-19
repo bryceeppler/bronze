@@ -21,6 +21,8 @@ use store::Store;
 use sync::Syncing;
 use ui::{App, Global, Saved, Window};
 
+pub const APP_ID: &str = "ca.bryce.bronze";
+
 const SIZE: (f32, f32) = (360.0, 640.0);
 const MIN_SIZE: (f32, f32) = (300.0, 400.0);
 const EDGE_MARGIN: f32 = 16.0;
@@ -28,9 +30,11 @@ const EDGE_MARGIN: f32 = 16.0;
 struct Launch {
     data: Option<PathBuf>,
     selection: Option<String>,
+    link: Option<Global>,
 }
 
 fn main() {
+    rune::set_app_id(APP_ID);
     let headless = rune::is_headless();
     let launch = match Launch::parse(rune::extra_args(), headless) {
         Ok(launch) => launch,
@@ -90,11 +94,14 @@ fn main() {
         .on_reopen(|s, _, tx| {
             s.show_panel(tx);
             true
-        });
+        })
+        .on_open_url(|s, link, tx| s.open_link(link, tx));
     let handle = app.handle();
     let window = Window::new(handle.clone());
     let created = window.clone();
-    let app = app.on_window(move |native| created.created(native)).init(move || App::new(saved, platform, window));
+    let app = app
+        .on_window(move |native| created.created(native))
+        .init(move || App::new(saved, platform, window).launched_with(launch.link));
     handle.update(|s, _| s.register_shortcuts());
     if !headless {
         let gestures = handle.clone();
@@ -140,7 +147,7 @@ fn instance_id(folder: &Path) -> String {
         .as_encoded_bytes()
         .iter()
         .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3));
-    format!("ca.bryce.bronze-{fnv1a:016x}")
+    format!("{APP_ID}-{fnv1a:016x}")
 }
 
 fn open(dir: &Path) -> Saved {
@@ -151,16 +158,18 @@ fn open(dir: &Path) -> Saved {
 
 impl Launch {
     fn parse(args: &[String], headless: bool) -> Result<Launch, String> {
-        let mut launch = Launch { data: None, selection: None };
-        for pair in args.chunks(2) {
-            match pair {
-                [flag, dir] if flag == "--data" => launch.data = Some(PathBuf::from(dir)),
-                [flag, text] if flag == "--selection" && headless => launch.selection = Some(text.clone()),
-                _ => {
-                    return Err(format!(
-                        "unexpected arguments {args:?}; usage: bronze [--data <dir>] [--selection <text>, headless runs only]"
-                    ));
-                }
+        let usage = || {
+            format!(
+                "unexpected arguments {args:?}; usage: bronze [--data <dir>] [bronze://capture | bronze://show-or-hide] [--selection <text>, headless runs only]"
+            )
+        };
+        let mut launch = Launch { data: None, selection: None, link: None };
+        let mut args = args.iter();
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--data" => launch.data = Some(PathBuf::from(args.next().ok_or_else(usage)?)),
+                "--selection" if headless => launch.selection = Some(args.next().ok_or_else(usage)?.clone()),
+                link => launch.link = Some(Global::from_link(link).ok_or_else(usage)?),
             }
         }
         Ok(launch)

@@ -232,11 +232,21 @@ fn preferences_reload_with_the_window_frame() {
         keep_on_top: false,
         scope: Scope::Active,
         frame: Some(Frame { position: (-1200, 85), size: (380.0, 700.0) }),
+        dismissed_gestures_notice: true,
     };
     store.save(&moved);
     store.flush();
     let (reloaded, _) = open::<Prefs>(dir.path());
     assert_eq!(reloaded, moved);
+}
+
+#[test]
+fn preferences_saved_before_the_gestures_notice_still_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let older = r#"{"version": 1, "keep_on_top": false, "scope": "active", "frame": null}"#;
+    std::fs::write(dir.path().join("preferences.json"), older).unwrap();
+    let (reloaded, _) = open::<Prefs>(dir.path());
+    assert_eq!(reloaded, Prefs { keep_on_top: false, scope: Scope::Active, ..Prefs::default() });
 }
 
 #[test]
