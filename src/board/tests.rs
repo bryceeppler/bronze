@@ -72,11 +72,12 @@ fn merging_folds_notes_into_the_first_in_board_order() {
     let c = added(board.submit("third"));
 
     board.toggle(&[a, c]);
-    assert_eq!(board.merge(&[c, a, b]), Some(a));
+    let merged = board.merge(&[c, a, b]);
+    assert_eq!(merged, board.loose().first().map(|n| n.id));
     assert_eq!(texts(board.loose()), ["first\n\nsecond\n\nthird"]);
     assert!(!board.loose()[0].done, "an open note keeps the merge open");
     assert!(board.active().is_some_and(|s| s.notes.is_empty()));
-    assert_eq!(board.merge(&[a]), None, "one note has nothing to merge with");
+    assert_eq!(board.merge(merged.as_slice()), None, "one note has nothing to merge with");
 }
 
 #[test]
@@ -188,4 +189,228 @@ fn ids_are_never_reused() {
     board.remove(&[a]);
     let b = added(board.submit("b"));
     assert_ne!(a, b);
+}
+
+type Outline = Vec<(Option<String>, Vec<(String, bool)>)>;
+
+fn outline(board: &Board) -> Outline {
+    board
+        .lists(Scope::All)
+        .iter()
+        .map(|l| (l.name.map(str::to_owned), l.notes.iter().map(|n| (n.text.clone(), n.done)).collect()))
+        .collect()
+}
+
+fn named(name: &str, notes: &[(&str, bool)]) -> (Option<String>, Vec<(String, bool)>) {
+    (Some(name.to_owned()), notes.iter().map(|&(text, done)| (text.to_owned(), done)).collect())
+}
+
+fn sync(a: &mut Board, b: &mut Board) {
+    a.join(b.replica());
+    b.join(a.replica());
+}
+
+fn id_of(board: &Board, text: &str) -> NoteId {
+    board.notes().find(|n| n.text == text).map(|n| n.id).unwrap_or_else(|| panic!("no note {text:?}"))
+}
+
+#[test]
+fn boards_that_join_each_other_show_the_same_outline_and_keep_their_own_active_section() {
+    let (mut mac, mut linux) = (Board::seeded(1), Board::seeded(2));
+    mac.submit("from the mac");
+    mac.submit("# Errands");
+    linux.submit("from linux");
+
+    assert!(mac.join(linux.replica()), "a new note changes the view");
+    assert!(!mac.join(linux.replica()), "joining the same copy again changes nothing");
+    linux.join(mac.replica());
+
+    assert_eq!(outline(&mac), outline(&linux));
+    assert_eq!(texts(mac.loose()).len(), 2);
+    assert_eq!(mac.active().map(|s| s.name.as_str()), Some("Errands"));
+    assert!(linux.active().is_none());
+}
+
+#[test]
+fn a_delete_beats_a_check_or_move_made_at_the_same_time_elsewhere() {
+    let (mut mac, mut linux) = (Board::seeded(1), Board::seeded(2));
+    for text in ["a", "b", "c"] {
+        mac.submit(text);
+    }
+    sync(&mut mac, &mut linux);
+    let b = id_of(&mac, "b");
+
+    mac.remove(&[b]);
+    linux.toggle(&[b]);
+    linux.move_note(b, Place::Before(id_of(&linux, "a")));
+    sync(&mut mac, &mut linux);
+
+    assert_eq!(texts(mac.loose()), ["a", "c"]);
+    assert_eq!(outline(&mac), outline(&linux));
+}
+
+#[test]
+fn merging_keeps_the_text_of_a_picked_note_deleted_elsewhere_at_the_same_time() {
+    let (mut mac, mut linux) = (Board::seeded(1), Board::seeded(2));
+    mac.submit("keep");
+    mac.submit("deleted on the mac");
+    sync(&mut mac, &mut linux);
+
+    mac.remove(&[id_of(&mac, "deleted on the mac")]);
+    let picked = [id_of(&linux, "keep"), id_of(&linux, "deleted on the mac")];
+    linux.merge(&picked);
+    sync(&mut mac, &mut linux);
+
+    assert_eq!(texts(mac.loose()), ["keep\n\ndeleted on the mac"]);
+    assert_eq!(outline(&mac), outline(&linux));
+}
+
+#[test]
+fn a_note_dropped_between_the_notes_two_machines_merged_from_the_same_pair_lands_between_them() {
+    let (mut mac, mut linux) = (Board::seeded(1), Board::seeded(2));
+    for text in ["first", "second", "third"] {
+        mac.submit(text);
+    }
+    linux.join(mac.replica());
+    let pair = [id_of(&mac, "first"), id_of(&mac, "second")];
+    mac.merge(&pair);
+    linux.merge(&pair);
+    sync(&mut mac, &mut linux);
+    let merged: Vec<NoteId> = mac.loose().iter().filter(|n| n.text == "first\n\nsecond").map(|n| n.id).collect();
+    assert_eq!(merged.len(), 2);
+
+    let third = id_of(&mac, "third");
+    mac.move_note(third, Place::Before(merged[1]));
+    linux.join(mac.replica());
+
+    for board in [&mac, &linux] {
+        assert_eq!(board.loose().iter().map(|n| n.id).collect::<Vec<_>>(), [merged[0], third, merged[1]]);
+    }
+}
+
+#[test]
+fn sections_named_alike_on_two_machines_show_as_one_that_renames_and_removes_as_one() {
+    let (mut mac, mut linux) = (Board::seeded(1), Board::seeded(2));
+    mac.submit("# Research");
+    mac.submit("from the mac");
+    linux.submit("first on linux");
+    linux.submit("# research");
+    linux.submit("from linux");
+    sync(&mut mac, &mut linux);
+
+    let expected = named("Research", &[("from the mac", false), ("from linux", false)]);
+    assert_eq!(outline(&linux)[1..], [expected]);
+    assert_eq!(linux.active().map(|s| s.name.as_str()), Some("Research"));
+    linux.submit("after the join");
+    mac.join(linux.replica());
+    assert_eq!(mac.sections().len(), 1);
+    assert_eq!(texts(&mac.sections()[0].notes), ["from the mac", "from linux", "after the join"]);
+
+    let shown = mac.sections()[0].id;
+    assert!(mac.rename_section(shown, "Reading"));
+    linux.join(mac.replica());
+    assert_eq!(linux.sections().iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["Reading"]);
+
+    linux.remove_section(linux.sections()[0].id);
+    mac.join(linux.replica());
+    assert!(mac.sections().is_empty());
+    assert_eq!(texts(mac.loose()), ["first on linux", "from the mac", "from linux", "after the join"]);
+}
+
+#[test]
+fn a_note_added_to_a_section_removed_elsewhere_shows_as_loose() {
+    let (mut mac, mut linux) = (Board::seeded(1), Board::seeded(2));
+    mac.submit("loose");
+    mac.submit("# Drafts");
+    sync(&mut mac, &mut linux);
+
+    mac.remove_section(mac.sections()[0].id);
+    let drafts = linux.sections()[0].id;
+    linux.activate(drafts);
+    linux.submit("written into drafts");
+    sync(&mut mac, &mut linux);
+
+    assert!(mac.sections().is_empty());
+    let mut loose = texts(mac.loose());
+    loose.sort_unstable();
+    assert_eq!(loose, ["loose", "written into drafts"]);
+    assert_eq!(outline(&mac), outline(&linux));
+    assert!(linux.active().is_none());
+}
+
+fn large_replica(rng: &mut fastrand::Rng) -> (DeviceId, Replica) {
+    let device = DeviceId::random(rng);
+    let at = Stamp { time: 1, device };
+    let mut replica = Replica::default();
+    let sections: Vec<SectionId> = (0..10)
+        .map(|n| {
+            let id = SectionId::random(rng);
+            let name = Reg { value: format!("Section {n}"), at };
+            replica.sections.insert(id, SectionRecord::Live { name, created: Stamp { time: n, device } });
+            id
+        })
+        .collect();
+    let mut rank = None;
+    for n in 0..2_000 {
+        let next = Rank::between(rank.as_ref(), None, rng);
+        let place = Position { section: (n % 2 == 0).then(|| sections[n / 2 % 10]), rank: next.clone() };
+        let text = format!("note {n}, about as long as a typical prompt someone queues");
+        let record = NoteRecord::Live { text, done: Reg { value: n % 3 == 0, at }, place: Reg { value: place, at } };
+        replica.notes.insert(NoteId::random(rng), record);
+        rank = Some(next);
+    }
+    for _ in 0..10_000 {
+        replica.notes.insert(NoteId::random(rng), NoteRecord::Removed);
+    }
+    (device, replica)
+}
+
+#[test]
+#[ignore = "a release-build timing: cargo test --release -- --ignored --nocapture joining_two_thousand"]
+fn joining_two_thousand_notes_and_ten_thousand_removed_ids_takes_under_16_ms() {
+    use std::time::{Duration, Instant};
+
+    let mut rng = fastrand::Rng::with_seed(16);
+    let (device, replica) = large_replica(&mut rng);
+    let mine = Board::load(device, &replica, None);
+    let mut theirs = Board::load(DeviceId::random(&mut rng), &replica, None);
+    theirs.capture("made on the other machine");
+    let some: Vec<NoteId> = theirs.notes().step_by(400).map(|n| n.id).collect();
+    theirs.toggle(&some[..2]);
+    theirs.move_note(some[2], Place::Before(some[3]));
+    theirs.remove(&some[4..]);
+    let shown = theirs.notes().count();
+    let theirs = theirs.replica().clone();
+    assert_eq!(theirs.notes.len(), 12_001);
+
+    let median = |mut times: Vec<Duration>| {
+        times.sort_unstable();
+        (times[times.len() / 2], times[0], times[times.len() - 1])
+    };
+    let mut medians = Vec::new();
+    for round in 0..5 {
+        let mut joins = Vec::new();
+        let mut first_syncs = Vec::new();
+        for _ in 0..40 {
+            let mut board = mine.clone();
+            let started = Instant::now();
+            let changed = board.join(&theirs);
+            joins.push(started.elapsed());
+            assert!(changed);
+            assert_eq!(board.notes().count(), shown);
+
+            let mut empty = Board::seeded(round);
+            let started = Instant::now();
+            empty.join(&theirs);
+            first_syncs.push(started.elapsed());
+            assert_eq!(empty.notes().count(), shown);
+        }
+        let (join, join_min, join_max) = median(joins);
+        let (first, first_min, first_max) = median(first_syncs);
+        println!(
+            "round {round}: join {join:.2?} ({join_min:.2?} to {join_max:.2?}), into an empty board {first:.2?} ({first_min:.2?} to {first_max:.2?})"
+        );
+        medians.push(join.max(first));
+    }
+    assert!(medians.iter().all(|m| *m < Duration::from_millis(16)), "medians {medians:?}");
 }

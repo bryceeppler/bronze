@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "active": "Research",
+  "loose": [
+    {
+      "text": "Loose thought",
+      "done": true
+    },
+    {
+      "text": "Second loose note\nwith a second line",
+      "done": false
+    }
+  ],
+  "sections": [
+    {
+      "name": "Research",
+      "notes": [
+        {
+          "text": "Read the **paper**",
+          "done": false
+        },
+        {
+          "text": "Check whether `retry_after` is seconds",
+          "done": true
+        },
+        {
+          "text": "  let cache = Lru::new(64);\n",
+          "done": false
+        }
+      ]
+    },
+    {
+      "name": "Errands",
+      "notes": [
+        {
+          "text": "Buy oat milk",
+          "done": false
+        }
+      ]
+    }
+  ]
+}

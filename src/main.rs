@@ -49,9 +49,12 @@ fn main() {
     };
     let saved = match data {
         Some(dir) => open(&dir),
-        None => {
-            Saved { board: Board::default(), notes: Store::Memory, prefs: Prefs::default(), preferences: Store::Memory }
-        }
+        None => Saved {
+            board: if headless { Board::seeded(0) } else { Board::default() },
+            notes: Store::Memory,
+            prefs: Prefs::default(),
+            preferences: Store::Memory,
+        },
     };
     let platform: Rc<dyn Platform> =
         if headless { Rc::new(Fake::selecting(launch.selection)) } else { Rc::new(Native) };

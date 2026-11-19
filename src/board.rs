@@ -1,23 +1,15 @@
+mod rank;
+mod replica;
+#[cfg(test)]
+mod simulation;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct NoteId(u64);
+use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct SectionId(u64);
-
-impl std::fmt::Display for NoteId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::fmt::Display for SectionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub use rank::Rank;
+pub use replica::{DeviceId, NoteId, NoteRecord, Position, Reg, Replica, SectionId, SectionRecord, Stamp};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Note {
@@ -33,12 +25,26 @@ pub struct Section {
     pub notes: Vec<Note>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Board {
+    replica: Replica,
+    device: DeviceId,
+    clock: Clock,
+    rng: fastrand::Rng,
+    active: Option<SectionId>,
+    view: View,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Clock {
+    wall: fn() -> u64,
+    latest: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct View {
     loose: Vec<Note>,
     sections: Vec<Section>,
-    active: Option<SectionId>,
-    next_id: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,33 +78,58 @@ pub struct List<'a> {
     pub notes: &'a [Note],
 }
 
-pub struct Restored {
-    pub loose: Vec<(String, bool)>,
-    pub sections: Vec<(String, Vec<(String, bool)>)>,
-    pub active: Option<String>,
+impl Default for Board {
+    fn default() -> Board {
+        Board::new(fastrand::Rng::new(), wall_clock)
+    }
 }
 
 impl Board {
-    pub fn restore(restored: Restored) -> Board {
-        let mut board = Board::default();
-        board.loose = restored.loose.into_iter().map(|(text, done)| board.note(text, done)).collect();
-        for (name, notes) in restored.sections {
-            let id = board.open_section(&name);
-            let notes: Vec<Note> = notes.into_iter().map(|(text, done)| board.note(text, done)).collect();
-            if let Some(section) = board.section_mut(id) {
-                section.notes.extend(notes);
-            }
+    pub fn seeded(seed: u64) -> Board {
+        Board::new(fastrand::Rng::with_seed(seed), || 0)
+    }
+
+    fn new(mut rng: fastrand::Rng, wall: fn() -> u64) -> Board {
+        Board {
+            replica: Replica::default(),
+            device: DeviceId::random(&mut rng),
+            clock: Clock { wall, latest: 0 },
+            rng,
+            active: None,
+            view: View::default(),
         }
-        board.active = restored.active.and_then(|name| board.section_named(&name)).map(|s| s.id);
+    }
+
+    pub fn load(device: DeviceId, replica: &Replica, active: Option<&str>) -> Board {
+        let mut board = Board { device, ..Board::default() };
+        board.join(replica);
+        board.active = active.and_then(|name| board.section_named(name)).map(|s| s.id);
         board
     }
 
+    pub fn device(&self) -> DeviceId {
+        self.device
+    }
+
+    pub fn replica(&self) -> &Replica {
+        &self.replica
+    }
+
+    pub fn join(&mut self, other: &Replica) -> bool {
+        self.replica.join(other);
+        self.clock.latest = self.clock.latest.max(other.latest());
+        let before = std::mem::take(&mut self.view);
+        self.project();
+        self.view != before
+    }
+
+    #[cfg(test)]
     pub fn loose(&self) -> &[Note] {
-        &self.loose
+        &self.view.loose
     }
 
     pub fn sections(&self) -> &[Section] {
-        &self.sections
+        &self.view.sections
     }
 
     pub fn active(&self) -> Option<&Section> {
@@ -106,18 +137,18 @@ impl Board {
     }
 
     pub fn section(&self, id: SectionId) -> Option<&Section> {
-        self.sections.iter().find(|s| s.id == id)
+        self.view.sections.iter().find(|s| s.id == id)
     }
 
     pub fn notes(&self) -> impl Iterator<Item = &Note> {
-        self.loose.iter().chain(self.sections.iter().flat_map(|s| &s.notes))
+        self.view.loose.iter().chain(self.view.sections.iter().flat_map(|s| &s.notes))
     }
 
     pub fn lists(&self, scope: Scope) -> Vec<List<'_>> {
         match (scope, self.active()) {
             (Scope::Active, Some(active)) => vec![active.list()],
-            _ => std::iter::once(List { owner: Owner::Loose, name: None, notes: &self.loose })
-                .chain(self.sections.iter().map(Section::list))
+            _ => std::iter::once(List { owner: Owner::Loose, name: None, notes: &self.view.loose })
+                .chain(self.view.sections.iter().map(Section::list))
                 .collect(),
         }
     }
@@ -138,23 +169,31 @@ impl Board {
     }
 
     pub fn capture(&mut self, text: impl Into<String>) -> NoteId {
-        let note = self.note(text.into(), false);
-        let id = note.id;
-        self.list_mut(self.active.map_or(Owner::Loose, Owner::Section)).push(note);
+        let at = self.tick();
+        let position = self.position(self.active.map_or(Owner::Loose, Owner::Section), None, None, at);
+        let id = self.add(text.into(), false, position, at);
+        self.project();
         id
     }
 
     pub fn toggle(&mut self, ids: &[NoteId]) {
-        let all_done = self.notes().filter(|n| ids.contains(&n.id)).all(|n| n.done);
-        for note in self.notes_mut().filter(|n| ids.contains(&n.id)) {
-            note.done = !all_done;
+        let done = !self.notes().filter(|n| ids.contains(&n.id)).all(|n| n.done);
+        let at = self.tick();
+        for id in ids {
+            if let Some(NoteRecord::Live { done: flag, .. }) = self.replica.notes.get_mut(id) {
+                *flag = Reg { value: done, at };
+            }
         }
+        self.project();
     }
 
     pub fn remove(&mut self, ids: &[NoteId]) {
-        for list in self.lists_mut() {
-            list.retain(|n| !ids.contains(&n.id));
+        for id in ids {
+            if let Some(record) = self.replica.notes.get_mut(id) {
+                *record = NoteRecord::Removed;
+            }
         }
+        self.project();
     }
 
     pub fn merge(&mut self, ids: &[NoteId]) -> Option<NoteId> {
@@ -163,44 +202,41 @@ impl Board {
         if rest.is_empty() {
             return None;
         }
-        let into = first.id;
         let text = picked.iter().map(|n| n.text.as_str()).collect::<Vec<_>>().join("\n\n");
         let done = picked.iter().all(|n| n.done);
-        let folded: Vec<NoteId> = rest.iter().map(|n| n.id).collect();
+        let position = self.position_of(first.id)?.clone();
+        let folded: Vec<NoteId> = picked.iter().map(|n| n.id).collect();
+        let at = self.tick();
+        let merged = self.add(text, done, position, at);
         self.remove(&folded);
-        if let Some(note) = self.notes_mut().find(|n| n.id == into) {
-            note.text = text;
-            note.done = done;
-        }
-        Some(into)
+        Some(merged)
     }
 
     pub fn move_note(&mut self, id: NoteId, to: Place) {
-        let Some((from_owner, from)) = self.locate(id) else { return };
-        let target = match to {
-            Place::Before(other) if other != id => self.locate(other),
-            Place::Before(_) => None,
-            Place::End(owner) => {
-                self.lists(Scope::All).iter().find(|l| l.owner == owner).map(|l| (owner, l.notes.len()))
-            }
-        };
-        let Some((owner, mut at)) = target else { return };
-        if owner == from_owner && from < at {
-            at -= 1;
+        if self.locate(id).is_none() {
+            return;
         }
-        let note = self.list_mut(from_owner).remove(from);
-        self.list_mut(owner).insert(at, note);
+        let (owner, before) = match to {
+            Place::Before(other) if other != id => match self.locate(other) {
+                Some(owner) => (owner, Some(other)),
+                None => return,
+            },
+            Place::Before(_) => return,
+            Place::End(owner) if self.lists(Scope::All).iter().any(|l| l.owner == owner) => (owner, None),
+            Place::End(_) => return,
+        };
+        let at = self.tick();
+        let position = self.position(owner, before, Some(id), at);
+        self.place(id, position, at);
+        self.project();
     }
 
     pub fn clear_done(&mut self, scope: Scope) {
-        match (scope, self.active) {
-            (Scope::Active, Some(id)) => self.list_mut(Owner::Section(id)).retain(|n| !n.done),
-            _ => {
-                for list in self.lists_mut() {
-                    list.retain(|n| !n.done);
-                }
-            }
-        }
+        let done: Vec<NoteId> = match (scope, self.active()) {
+            (Scope::Active, Some(active)) => active.notes.iter().filter(|n| n.done).map(|n| n.id).collect(),
+            _ => self.notes().filter(|n| n.done).map(|n| n.id).collect(),
+        };
+        self.remove(&done);
     }
 
     pub fn activate(&mut self, id: SectionId) {
@@ -216,76 +252,184 @@ impl Board {
     pub fn rename_section(&mut self, id: SectionId, name: &str) -> bool {
         let name = name.trim();
         let taken = self.section_named(name).is_some_and(|s| s.id != id);
-        match self.section_mut(id) {
-            Some(section) if !name.is_empty() && !taken => {
-                section.name = name.to_owned();
-                true
-            }
-            _ => false,
+        if self.section(id).is_none() || name.is_empty() || taken {
+            return false;
         }
+        let at = self.tick();
+        for member in self.members(id) {
+            if let Some(SectionRecord::Live { name: current, .. }) = self.replica.sections.get_mut(&member) {
+                *current = Reg { value: name.to_owned(), at };
+            }
+        }
+        self.project();
+        true
     }
 
     pub fn remove_section(&mut self, id: SectionId) {
-        let Some(at) = self.sections.iter().position(|s| s.id == id) else { return };
-        let section = self.sections.remove(at);
-        self.loose.extend(section.notes);
+        let Some(section) = self.section(id) else { return };
+        let notes: Vec<NoteId> = section.notes.iter().map(|n| n.id).collect();
+        for member in self.members(id) {
+            self.replica.sections.insert(member, SectionRecord::Removed);
+        }
+        let at = self.tick();
+        let mut last = self.view.loose.last().and_then(|n| self.position_of(n.id)).map(|p| p.rank.clone());
+        for note in notes {
+            let rank = Rank::between(last.as_ref(), None, &mut self.rng);
+            self.place(note, Position { section: None, rank: rank.clone() }, at);
+            last = Some(rank);
+        }
         if self.active == Some(id) {
             self.active = None;
         }
+        self.project();
     }
 
     pub fn copy_text(&self, ids: &[NoteId]) -> String {
         self.notes().filter(|n| ids.contains(&n.id)).map(|n| n.text.as_str()).collect::<Vec<_>>().join("\n\n")
     }
 
-    fn next(&mut self) -> u64 {
-        self.next_id += 1;
-        self.next_id
+    fn tick(&mut self) -> Stamp {
+        self.clock.latest = (self.clock.wall)().max(self.clock.latest + 1);
+        Stamp { time: self.clock.latest, device: self.device }
     }
 
-    fn note(&mut self, text: String, done: bool) -> Note {
-        Note { id: NoteId(self.next()), text, done }
+    fn add(&mut self, text: String, done: bool, position: Position, at: Stamp) -> NoteId {
+        let id = NoteId::random(&mut self.rng);
+        let record = NoteRecord::Live { text, done: Reg { value: done, at }, place: Reg { value: position, at } };
+        self.replica.notes.insert(id, record);
+        id
+    }
+
+    fn place(&mut self, id: NoteId, position: Position, at: Stamp) {
+        if let Some(NoteRecord::Live { place, .. }) = self.replica.notes.get_mut(&id) {
+            *place = Reg { value: position, at };
+        }
+    }
+
+    fn position_of(&self, id: NoteId) -> Option<&Position> {
+        match self.replica.notes.get(&id) {
+            Some(NoteRecord::Live { place, .. }) => Some(&place.value),
+            _ => None,
+        }
+    }
+
+    fn rerank(&mut self, id: NoteId, rank: Rank, at: Stamp) {
+        if let Some(NoteRecord::Live { place, .. }) = self.replica.notes.get_mut(&id) {
+            *place = Reg { value: Position { section: place.value.section, rank }, at };
+        }
+    }
+
+    fn position(&mut self, owner: Owner, before: Option<NoteId>, moving: Option<NoteId>, at: Stamp) -> Position {
+        let list: Vec<(NoteId, Rank)> = self
+            .lists(Scope::All)
+            .iter()
+            .find(|l| l.owner == owner)
+            .map(|l| {
+                l.notes
+                    .iter()
+                    .filter(|n| Some(n.id) != moving)
+                    .filter_map(|n| Some((n.id, self.position_of(n.id)?.rank.clone())))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let index = before.and_then(|b| list.iter().position(|(id, _)| *id == b)).unwrap_or(list.len());
+        let lo = index.checked_sub(1).map(|i| list[i].1.clone());
+        let mut hi = list.get(index).map(|(_, rank)| rank.clone());
+        if let (Some(lo), Some(tied)) = (&lo, &hi)
+            && tied == lo
+        {
+            let run: Vec<NoteId> = list[index..].iter().take_while(|(_, rank)| rank == lo).map(|(id, _)| *id).collect();
+            let mut after = list.get(index + run.len()).map(|(_, rank)| rank.clone());
+            for id in run.into_iter().rev() {
+                let rank = Rank::between(Some(lo), after.as_ref(), &mut self.rng);
+                self.rerank(id, rank.clone(), at);
+                after = Some(rank);
+            }
+            hi = after;
+        }
+        let section = match owner {
+            Owner::Loose => None,
+            Owner::Section(id) => Some(id),
+        };
+        Position { section, rank: Rank::between(lo.as_ref(), hi.as_ref(), &mut self.rng) }
     }
 
     fn open_section(&mut self, name: &str) -> SectionId {
         if let Some(found) = self.section_named(name) {
             return found.id;
         }
-        let id = SectionId(self.next());
-        self.sections.push(Section { id, name: name.to_owned(), notes: Vec::new() });
+        let at = self.tick();
+        let id = SectionId::random(&mut self.rng);
+        self.replica.sections.insert(id, SectionRecord::Live { name: Reg { value: name.to_owned(), at }, created: at });
+        self.project();
         id
     }
 
     fn section_named(&self, name: &str) -> Option<&Section> {
         let name = name.to_lowercase();
-        self.sections.iter().find(|s| s.name.to_lowercase() == name)
+        self.view.sections.iter().find(|s| s.name.to_lowercase() == name)
     }
 
-    fn section_mut(&mut self, id: SectionId) -> Option<&mut Section> {
-        self.sections.iter_mut().find(|s| s.id == id)
+    fn members(&self, id: SectionId) -> Vec<SectionId> {
+        let Some(shown) = self.section(id).map(|s| s.name.to_lowercase()) else { return Vec::new() };
+        self.replica
+            .sections
+            .iter()
+            .filter_map(|(member, record)| match record {
+                SectionRecord::Live { name, .. } if name.value.to_lowercase() == shown => Some(*member),
+                _ => None,
+            })
+            .collect()
     }
 
-    fn locate(&self, id: NoteId) -> Option<(Owner, usize)> {
-        self.lists(Scope::All).iter().find_map(|l| l.notes.iter().position(|n| n.id == id).map(|at| (l.owner, at)))
+    fn locate(&self, id: NoteId) -> Option<Owner> {
+        self.lists(Scope::All).iter().find(|l| l.notes.iter().any(|n| n.id == id)).map(|l| l.owner)
     }
 
-    fn list_mut(&mut self, owner: Owner) -> &mut Vec<Note> {
-        let at = match owner {
-            Owner::Section(id) => self.sections.iter().position(|s| s.id == id),
-            Owner::Loose => None,
-        };
-        match at {
-            Some(i) => &mut self.sections[i].notes,
-            None => &mut self.loose,
+    fn project(&mut self) {
+        let mut live: Vec<(Stamp, SectionId, &str)> = self
+            .replica
+            .sections
+            .iter()
+            .filter_map(|(id, record)| match record {
+                SectionRecord::Live { name, created } => Some((*created, *id, name.value.as_str())),
+                SectionRecord::Removed => None,
+            })
+            .collect();
+        live.sort_unstable();
+        let mut sections: Vec<Section> = Vec::new();
+        let mut named: HashMap<String, usize> = HashMap::new();
+        let mut shown_in: HashMap<SectionId, usize> = HashMap::new();
+        for (_, id, name) in live {
+            let at = *named.entry(name.to_lowercase()).or_insert_with(|| {
+                sections.push(Section { id, name: name.to_owned(), notes: Vec::new() });
+                sections.len() - 1
+            });
+            shown_in.insert(id, at);
         }
-    }
-
-    fn lists_mut(&mut self) -> impl Iterator<Item = &mut Vec<Note>> {
-        std::iter::once(&mut self.loose).chain(self.sections.iter_mut().map(|s| &mut s.notes))
-    }
-
-    fn notes_mut(&mut self) -> impl Iterator<Item = &mut Note> {
-        self.lists_mut().flat_map(|l| l.iter_mut())
+        let mut placed: Vec<(Option<usize>, &Rank, NoteId, &String, bool)> = self
+            .replica
+            .notes
+            .iter()
+            .filter_map(|(id, record)| match record {
+                NoteRecord::Live { text, done, place } => {
+                    let list = place.value.section.and_then(|s| shown_in.get(&s).copied());
+                    Some((list, &place.value.rank, *id, text, done.value))
+                }
+                NoteRecord::Removed => None,
+            })
+            .collect();
+        placed.sort_unstable_by(|a, b| (a.0, a.1, a.2).cmp(&(b.0, b.1, b.2)));
+        let mut loose = Vec::new();
+        for (list, _, id, text, done) in placed {
+            let note = Note { id, text: text.clone(), done };
+            match list {
+                Some(at) => sections[at].notes.push(note),
+                None => loose.push(note),
+            }
+        }
+        self.active = self.active.and_then(|id| shown_in.get(&id)).map(|&at| sections[at].id);
+        self.view = View { loose, sections };
     }
 }
 
@@ -298,4 +442,8 @@ impl Section {
 fn section_command(text: &str) -> Option<&str> {
     let name = text.strip_prefix("# ")?.trim();
     (!name.is_empty() && !name.contains('\n')).then_some(name)
+}
+
+fn wall_clock() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
