@@ -21,6 +21,9 @@ fail() {
   failed=1
   echo "sync-check: FAILED $1"
   tail -n 20 "$work"/*.log 2> /dev/null || true
+  for name in "${!window[@]}"; do
+    [ -z "${window[$name]}" ] || DISPLAY=${display[$name]} timeout 5 import -window "${window[$name]}" "$work/$name.png" 2> /dev/null || true
+  done
   echo "sync-check: kept $work, which holds a test key and test certificates; remove it when done"
   exit 1
 }
@@ -81,13 +84,19 @@ outline() {
 holds() { grep -qF "$2" "$work/$1/notes.json" 2> /dev/null; }
 converged() { [ -n "$(outline a)" ] && [ "$(outline a)" = "$(outline b)" ] && [ "$(outline a | jq length)" = "$1" ]; }
 
+free_display() {
+  local number
+  for _ in $(seq 50); do
+    number=$((200 + RANDOM % 800))
+    [ -e "/tmp/.X11-unix/X$number" ] || [ -e "/tmp/.X$number-lock" ] || { echo "$number"; return; }
+  done
+  return 1
+}
 for name in a b; do
-  Xvfb -displayfd 3 -screen 0 1280x800x24 -nolisten tcp 3> "$work/$name.display" > /dev/null 2>&1 &
+  number=$(free_display) || fail "no free X display for $name"
+  display[$name]=":$number"
+  Xvfb "${display[$name]}" -screen 0 1280x800x24 -nolisten tcp > /dev/null 2>&1 &
   pids+=($!)
-done
-for name in a b; do
-  wait_for 5000 "[ -s '$work/$name.display' ]" || fail "Xvfb for $name did not start"
-  display[$name]=":$(head -1 "$work/$name.display")"
   wait_for 5000 "DISPLAY=${display[$name]} xdpyinfo > /dev/null 2>&1" || fail "Xvfb ${display[$name]} does not answer"
 done
 
@@ -267,7 +276,7 @@ read -r composer_x composer_y composer_w composer_h <<< "$(rect menu composer)"
 keys() { DISPLAY=${display[$1]} xdotool windowfocus --sync "${window[$1]}" "${@:2}"; }
 hint=("$field_x" $((field_y + field_h + 8)) "$field_w" 40)
 region() {
-  DISPLAY=${display[$1]} import -window "${window[$1]}" -crop "$4x$5+$2+$3" +repage rgb:- 2> /dev/null | md5sum
+  DISPLAY=${display[$1]} timeout 5 import -window "${window[$1]}" -crop "$4x$5+$2+$3" +repage rgb:- 2> /dev/null | md5sum
 }
 settled() {
   local now
