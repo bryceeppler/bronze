@@ -167,7 +167,11 @@ impl Launch {
         let mut args = args.iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--data" => launch.data = Some(PathBuf::from(args.next().ok_or_else(usage)?)),
+                "--data" => {
+                    let dir = args.next().ok_or_else(usage)?;
+                    launch.data =
+                        Some(std::path::absolute(dir).map_err(|error| format!("cannot use {dir} for notes: {error}"))?);
+                }
                 "--selection" if headless => launch.selection = Some(args.next().ok_or_else(usage)?.clone()),
                 link => launch.link = Some(Global::from_link(link).ok_or_else(usage)?),
             }
