@@ -51,7 +51,7 @@ Neither the vault id nor the token reveals the key or the encryption key.
 Each machine keeps the server address and the key in `sync.json` in its notes folder, written with mode `0600` on Unix.
 Choosing **Stop Syncing** turns sync off at once and removes that file.
 An upload that is still connecting, or still has part of the board to send, is abandoned, and the server keeps the copy it had.
-Bronze checks before each piece it sends, so an upload whose last piece had just been taken for sending when you stopped still completes; for a small board that is the whole upload, and the window is a few microseconds.
+Bronze checks before each piece it sends, so an upload whose last piece had just been taken for sending when you stopped still completes; for a small board that one piece is the whole upload.
 A read that was already on its way may finish, and Bronze ignores its answer.
 Removing the file by hand turns sync off the next time Bronze starts; a running Bronze keeps syncing until then.
 
