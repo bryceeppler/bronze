@@ -277,6 +277,24 @@ fn a_key_for_another_vault_keeps_its_notes_apart() {
 }
 
 #[test]
+fn machines_move_to_a_new_vault_with_every_note_once() {
+    let desk = Desk::new();
+    let (mut a, mut b) = (Machine::with(&["# Work", "From a"]), Machine::with(&["From b"]));
+    let leaked = desk.start(&mut a);
+    desk.join(&mut b, &leaked);
+    let before = desk.converge(&mut [&mut a, &mut b]);
+    a.sync.stop().unwrap();
+    b.sync.stop().unwrap();
+    b.edit(|board| board.capture("Written on b between vaults"));
+    let fresh = desk.start(&mut a);
+    assert_ne!(leaked.key, fresh.key);
+    desk.join(&mut b, &fresh);
+    let after = desk.converge(&mut [&mut a, &mut b]);
+    assert_eq!(after.len(), before.len() + 1, "{after:?}");
+    assert!(before.iter().all(|line| after.iter().filter(|other| *other == line).count() == 1), "{after:?}");
+}
+
+#[test]
 fn a_full_server_declines_a_new_vault_in_its_own_words() {
     let desk = Desk::on(TestServer::holding(0));
     let mut a = Machine::with(&["Stays here"]);
