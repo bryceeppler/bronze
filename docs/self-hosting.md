@@ -49,6 +49,8 @@ It prints `bronze-sync listening on 127.0.0.1:8787, data in /home/you/bronze-syn
 Stop it with `Ctrl+C`.
 To keep it running after you log out, see [Run it as a service](#run-it-as-a-service).
 
+On a Linux server with x86-64 and glibc 2.35 or later, you can skip the build: the Linux download on the [latest release](https://github.com/bryceeppler/bronze/releases/latest) holds a ready `bronze-sync`.
+
 ## Run it with Docker
 
 ```sh

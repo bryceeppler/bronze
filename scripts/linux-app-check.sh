@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+archive=${1:+$(realpath "$1")}
 cd "$(dirname "$0")/.."
 
 tmp=$(mktemp -d)
@@ -12,15 +13,29 @@ export CARGO_HOME=${CARGO_HOME:-$HOME/.cargo} RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.
 export HOME=$tmp/home XDG_DATA_HOME=$tmp/data XDG_CONFIG_HOME=$tmp/config XDG_CACHE_HOME=$tmp/cache
 mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
 entry=$XDG_DATA_HOME/applications/ca.bryce.bronze.desktop
-theme=assets/brand/icon/linux/dark/hicolor
 log=$tmp/bronze.log
+
+case $# in
+  0)
+    installer=./scripts/linux-app.sh
+    theme=assets/brand/icon/linux/dark/hicolor
+    ;;
+  1)
+    mkdir "$tmp/release"
+    tar -xzf "$archive" -C "$tmp/release"
+    release=$(echo "$tmp"/release/*)
+    installer=$release/linux-app.sh
+    theme=$release/icons/hicolor
+    ;;
+  *) echo "usage: scripts/linux-app-check.sh [bronze-<version>-linux-x86_64.tar.gz]" >&2; exit 2 ;;
+esac
 
 pass() { echo "linux app: $1"; }
 fail() { echo "linux app: FAILED $1"; [ ! -f "$log" ] || cat "$log"; exit 1; }
 wait_for() { for _ in $(seq 100); do eval "$1" && return 0; sleep 0.1; done; return 1; }
 installed() { (cd "$tmp" && find home data config -path data/bronze -prune -o -type f -print0 | sort -z | xargs -0 -r sha256sum); }
 
-./scripts/linux-app.sh --autostart > "$tmp/install.log" 2>&1 || { cat "$tmp/install.log"; exit 1; }
+"$installer" --autostart > "$tmp/install.log" 2>&1 || { cat "$tmp/install.log"; exit 1; }
 first=$(installed)
 expected=$( (printf '%s\n' config/autostart/ca.bryce.bronze.desktop data/applications/ca.bryce.bronze.desktop home/.local/bin/bronze
   find "$theme" -type f -printf 'data/icons/hicolor/%P\n') | sort)
@@ -67,15 +82,15 @@ notes=$XDG_DATA_HOME/bronze/notes.json
 wait_for 'grep -q "Selected after installing" "$notes" 2> /dev/null' \
   && pass "ctrl+alt+c captured into $(sed "s|^$tmp/||" <<< "$notes")" || fail "capture: no note in $notes"
 
-./scripts/linux-app.sh --autostart > "$tmp/install.log" 2>&1 || { cat "$tmp/install.log"; exit 1; }
+"$installer" --autostart > "$tmp/install.log" 2>&1 || { cat "$tmp/install.log"; exit 1; }
 [ "$(installed)" = "$first" ] && pass "a second install over the running app left the same files" || fail "a second install changed files"
 kill -0 "$app" 2> /dev/null && pass "and the running app kept running" || fail "the second install stopped the app"
 kill "$app"
 wait_for '! kill -0 "$app" 2> /dev/null' || fail "the app did not stop"
 
-./scripts/linux-app.sh --uninstall > "$tmp/uninstall.log" 2>&1 || { cat "$tmp/uninstall.log"; exit 1; }
+"$installer" --uninstall > "$tmp/uninstall.log" 2>&1 || { cat "$tmp/uninstall.log"; exit 1; }
 [ -z "$(installed)" ] && pass "uninstall removed every installed file" || fail "uninstall left $(installed)"
 left=$(cd "$tmp" && find home data config -mindepth 1 -not -path 'data/bronze*' | sort)
 [ -z "$left" ] && pass "and every folder it made" || fail "uninstall left $left"
 grep -q "Selected after installing" "$notes" && pass "notes in data/bronze were kept" || fail "uninstall touched the notes"
-./scripts/linux-app.sh --uninstall > /dev/null && pass "a second uninstall is a no-op" || fail "a second uninstall failed"
+"$installer" --uninstall > /dev/null && pass "a second uninstall is a no-op" || fail "a second uninstall failed"

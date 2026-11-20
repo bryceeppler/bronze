@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")"
 
 case $#:${1:-} in
   0: | 1:--autostart | 1:--uninstall) mode=${1:-} ;;
-  *) echo "usage: scripts/linux-app.sh [--autostart | --uninstall]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--autostart | --uninstall]" >&2; exit 2 ;;
 esac
+
+if [ -f bronze ]; then
+  built=bronze
+  theme=icons/hicolor
+else
+  cd ..
+  built=target/release/bronze
+  theme=assets/brand/icon/linux/dark/hicolor
+fi
 
 data=${XDG_DATA_HOME:-$HOME/.local/share}
 config=${XDG_CONFIG_HOME:-$HOME/.config}
 bin=$HOME/.local/bin/bronze
-theme=assets/brand/icon/linux/dark/hicolor
 entry=$data/applications/ca.bryce.bronze.desktop
 autostart=$config/autostart/ca.bryce.bronze.desktop
 mapfile -t icons < <(find "$theme" -type f -printf '%P\n' | sort)
@@ -42,11 +50,10 @@ place() {
   mv -f "$2.new" "$2"
 }
 
-cargo build --release
+[ "$built" = bronze ] || cargo build --release
 
-version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
-staged=target/linux-app
-mkdir -p "$staged"
+staged=$(mktemp -d)
+trap 'rm -rf "$staged"' EXIT
 cat > "$staged/ca.bryce.bronze.desktop" <<ENTRY
 [Desktop Entry]
 Type=Application
@@ -62,10 +69,10 @@ Keywords=notes;clipboard;capture;prompts;
 StartupWMClass=ca.bryce.bronze
 ENTRY
 
-place target/release/bronze "$bin" 755
+place "$built" "$bin" 755
 for icon in "${icons[@]}"; do place "$theme/$icon" "$data/icons/hicolor/$icon" 644; done
 place "$staged/ca.bryce.bronze.desktop" "$entry" 644
 [ "$mode" != --autostart ] || place "$staged/ca.bryce.bronze.desktop" "$autostart" 644
 
-echo "linux-app: installed $bin ($version) and Bronze in the app launcher"
+echo "linux-app: installed $bin and Bronze in the app launcher"
 [ "$mode" != --autostart ] || echo "linux-app: Bronze starts at login"

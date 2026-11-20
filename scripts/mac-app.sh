@@ -2,21 +2,33 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+case $#:${1:-} in
+  0: | 1:--package) mode=${1:-} ;;
+  *) echo "usage: scripts/mac-app.sh [--package]" >&2; exit 2 ;;
+esac
+
 app="$HOME/Applications/Bronze.app"
 staged=target/mac-app/Bronze.app
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
 
-cargo build --release
-
 rm -rf target/mac-app
-mkdir -p "$staged/Contents/MacOS" "$staged/Contents/Resources" target/mac-app/Bronze.iconset
-cp target/release/bronze "$staged/Contents/MacOS/bronze"
+mkdir -p "$staged/Contents/MacOS" "$staged/Contents/Resources"
 
-for size in 16 32 128 256 512; do
-  sips -z "$size" "$size" assets/icon-1024.png --out "target/mac-app/Bronze.iconset/icon_${size}x${size}.png" > /dev/null
-  sips -z $((size * 2)) $((size * 2)) assets/icon-1024.png --out "target/mac-app/Bronze.iconset/icon_${size}x${size}@2x.png" > /dev/null
-done
-iconutil -c icns target/mac-app/Bronze.iconset -o "$staged/Contents/Resources/Bronze.icns"
+if [ "$mode" = --package ]; then
+  targets=(aarch64-apple-darwin x86_64-apple-darwin)
+  rustup target add "${targets[@]}"
+  export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$PWD=/bronze"
+  slices=()
+  for target in "${targets[@]}"; do
+    cargo build --release --locked --target "$target" --target-dir target/package-build
+    slices+=("target/package-build/$target/release/bronze")
+  done
+  lipo -create -output "$staged/Contents/MacOS/bronze" "${slices[@]}"
+else
+  cargo build --release
+  cp target/release/bronze "$staged/Contents/MacOS/bronze"
+fi
+cp assets/brand/icon/bronze-dark.icns "$staged/Contents/Resources/Bronze.icns"
 
 cat > "$staged/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -51,9 +63,21 @@ if [ -n "$identity" ]; then
     echo "mac-app: signing failed: ${signed//"$identity"/<identity>}" >&2
     exit 1
   fi
+elif [ "$mode" = --package ]; then
+  echo "mac-app: a release needs an Apple Development identity to sign with" >&2
+  exit 1
 else
   codesign --force --sign - "$staged"
   echo "mac-app: no signing identity, so Bronze is signed ad hoc and macOS will forget its Accessibility permission on every rebuild" >&2
+fi
+
+if [ "$mode" = --package ]; then
+  mkdir -p target/package
+  zip=target/package/Bronze-$version-macos-universal.zip
+  rm -f "$zip"
+  ditto -c -k --norsrc --noextattr --keepParent "$staged" "$zip"
+  echo "mac-app: packaged $zip"
+  exit 0
 fi
 
 mkdir -p "$HOME/Applications"

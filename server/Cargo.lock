@@ -77,7 +77,7 @@ dependencies = [
 
 [[package]]
 name = "bronze-sync"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "bronze-wire",
@@ -92,7 +92,7 @@ dependencies = [
 
 [[package]]
 name = "bronze-wire"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "bumpalo"

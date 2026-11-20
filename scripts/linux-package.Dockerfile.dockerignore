@@ -1,0 +1,11 @@
+*
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!src
+!wire
+!server
+!assets/brand/icon/linux
+!scripts/linux-app.sh
+!LICENSE
+server/target
