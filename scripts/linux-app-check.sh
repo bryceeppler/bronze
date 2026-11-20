@@ -26,6 +26,11 @@ case $# in
     release=$(echo "$tmp"/release/*)
     installer=$release/linux-app.sh
     theme=$release/icons/hicolor
+    diff -r assets/brand/icon/linux/dark/hicolor "$theme" || { echo "linux app: FAILED the archive's icons differ from the brand's dark hicolor set"; exit 1; }
+    for file in bronze bronze-sync linux-app.sh LICENSE; do
+      [ -f "$release/$file" ] || { echo "linux app: FAILED the archive has no $file"; exit 1; }
+    done
+    echo "linux app: the archive holds bronze, bronze-sync, linux-app.sh, LICENSE and the brand's dark hicolor icons"
     ;;
   *) echo "usage: scripts/linux-app-check.sh [bronze-<version>-linux-x86_64.tar.gz]" >&2; exit 2 ;;
 esac

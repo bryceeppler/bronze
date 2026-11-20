@@ -4,7 +4,7 @@ Set-Location (Split-Path -Parent $PSScriptRoot)
 
 $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"$' | Select-Object -First 1).Matches[0].Groups[1].Value
 $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $HOME ".cargo" }
-$env:RUSTFLAGS = "--remap-path-prefix=$cargoHome=/cargo --remap-path-prefix=$((Get-Location).Path)=/bronze"
+$env:CARGO_ENCODED_RUSTFLAGS = "--remap-path-prefix=$cargoHome=/cargo" + [char]0x1f + "--remap-path-prefix=$((Get-Location).Path)=/bronze"
 cargo build --release --locked --target-dir $TargetDir
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 

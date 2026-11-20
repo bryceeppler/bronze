@@ -80,7 +80,7 @@ The release lists a SHA-256 checksum for each download, also attached as `SHA256
 | --- | --- |
 | macOS 14 or later, Apple silicon or Intel | `Bronze-<version>-macos-universal.zip` |
 | Windows 10 or 11, 64-bit | `bronze-<version>-windows-x86_64.zip` |
-| Linux, x86-64, glibc 2.35 or later (Ubuntu 22.04, Debian 12, Fedora 36 and newer) | `bronze-<version>-linux-x86_64.tar.gz` |
+| Linux, x86-64, glibc 2.35 or later, such as Ubuntu 22.04 or Debian 12 and newer | `bronze-<version>-linux-x86_64.tar.gz` |
 
 The downloads are not notarized by Apple or signed for Windows yet, so each system warns you the first time.
 If you would rather not run a prebuilt binary, [build Bronze from source](#build-from-source).
@@ -112,8 +112,8 @@ Bronze has no console window; run `bronze.exe 2> bronze.log` to keep its log.
 ### Linux
 
 ```sh
-tar -xzf bronze-<version>-linux-x86_64.tar.gz
-cd bronze-<version>-linux-x86_64
+tar -xzf bronze-*-linux-x86_64.tar.gz
+cd bronze-*-linux-x86_64/
 ./linux-app.sh
 ```
 
