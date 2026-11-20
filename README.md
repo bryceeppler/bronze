@@ -1,65 +1,128 @@
-<img src="assets/icon.svg" width="64" height="64" alt="">
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/logo-dark.svg">
+    <img src="assets/brand/logo-light.svg" alt="Bronze" width="380">
+  </picture>
+</p>
 
-# bronze
+<h3 align="center">Select anything. Press a key. It lands in Bronze.</h3>
 
-A capture panel for AI-assisted work: part to-do list, part clipboard, part scratchpad.
-Select text in any app, press a shortcut, and it lands in Bronze.
+<p align="center">
+  A capture panel for notes and prompts on macOS, Windows and Linux, with end-to-end encrypted sync you host yourself.
+</p>
+
+<p align="center">
+  <a href="https://github.com/bryceeppler/bronze/releases/latest"><img src="https://img.shields.io/github/v/release/bryceeppler/bronze?style=flat-square&labelColor=2a2a2d&color=b8692f&label=download" alt="Download the latest release"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-b8692f?style=flat-square&labelColor=2a2a2d" alt="Platform: macOS, Windows and Linux">
+  <img src="https://img.shields.io/badge/built%20with-Rust-b8692f?style=flat-square&labelColor=2a2a2d&logo=rust&logoColor=white" alt="Built with Rust">
+  <img src="https://img.shields.io/badge/sync-end--to--end%20encrypted-b8692f?style=flat-square&labelColor=2a2a2d" alt="Sync: end-to-end encrypted">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-b8692f?style=flat-square&labelColor=2a2a2d" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/hero-dark.png">
+    <img src="docs/media/hero-light.png" alt="Bronze beside a document, holding the sentence that was just selected in it" width="860">
+  </picture>
+</p>
+
+Bronze is part to-do list, part clipboard, part scratchpad.
+Select text in any app, press the capture shortcut, and it lands in Bronze.
 Queue the prompts you want to try next, copy them back out, and check them off.
+
+Notes live in one local file on your machine, with no account and no telemetry.
+Sync to your own `bronze-sync` server is optional and end-to-end encrypted, so the server only ever stores ciphertext.
 
 Bronze is written in Rust on [Rune](https://github.com/anomalyco/rune) and is inspired by shadcn's Copper, which is Mac only.
 It is an independent project and is not affiliated with shadcn.
 
-Notes stay in one local file on your machine.
-To have them on your other machines too, Bronze can sync them through a server you run yourself, end-to-end encrypted.
-There is no account and no telemetry.
+## Capture from anywhere
 
-## Run
+Press `Ctrl+Alt+C`, or double-tap Left Shift, and the selected text becomes a note.
 
-```sh
-cargo run
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/capture-dark.gif">
+  <img src="docs/media/capture-light.gif" alt="Selecting a sentence in a document, pressing Control Option C, and the sentence appearing in Bronze" width="860">
+</picture>
 
-Linux needs the packages listed under [Linux](#linux).
-Type in the box at the bottom and press Enter to add a note.
-`--data <dir>` keeps notes and preferences in a folder of your choice, as in `cargo run -- --data /path/to/folder`.
+## Queue, check off, find
 
-## Mac
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/media/queue-dark.gif">
+        <img src="docs/media/queue-light.gif" alt="Typing a prompt with bold text, checking a note off, and jumping to a section with Command K" width="400">
+      </picture>
+      <br><sub>Type a note in Markdown, check it off, jump to a section with <code>Ctrl/Cmd+K</code>.</sub>
+    </td>
+    <td width="50%" align="center">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/media/search-dark.gif">
+        <img src="docs/media/search-light.gif" alt="Typing plain into search and the list narrowing to the two matching notes" width="400">
+      </picture>
+      <br><sub>Search every section as you type.</sub>
+    </td>
+  </tr>
+</table>
 
-```sh
-./scripts/mac-app.sh
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/tour-dark.png">
+  <img src="docs/media/tour-light.png" alt="Three Bronze panels: notes grouped in sections, a search for plain, and the section switcher" width="860">
+</picture>
 
-This builds Bronze and installs it as `~/Applications/Bronze.app`, signed with your Apple Development identity (or the one named in `BRONZE_SIGN`).
-Open it, choose Open Settings in the notice, and turn Bronze on under Accessibility.
-You grant this once; the notice goes away by itself.
+## Install
+
+Download Bronze for your system from the [latest release](https://github.com/bryceeppler/bronze/releases/latest).
+The release lists a SHA-256 checksum for each download, also attached as `SHA256SUMS.txt`.
+
+| System | Download |
+| --- | --- |
+| macOS 14 or later, Apple silicon or Intel | `Bronze-<version>-macos-universal.zip` |
+| Windows 10 or 11, 64-bit | `bronze-<version>-windows-x86_64.zip` |
+| Linux, x86-64, glibc 2.35 or later, such as Ubuntu 22.04 or Debian 12 and newer | `bronze-<version>-linux-x86_64.tar.gz` |
+
+The downloads are not notarized by Apple or signed for Windows yet, so each system warns you the first time.
+If you would rather not run a prebuilt binary, [build Bronze from source](#build-from-source).
+
+### macOS
+
+1. Unzip the download and move `Bronze.app` to your Applications folder.
+2. Open Bronze. macOS says Apple could not verify that Bronze is free of malware; choose **Done**.
+3. Open **System Settings**, then **Privacy & Security**, scroll down to the message about Bronze, and choose **Open Anyway**.
+   Confirm with your password, then choose **Open Anyway** once more.
+4. Bronze asks for Accessibility access: choose **Open Settings** in the notice and turn Bronze on under **Accessibility**.
+   You grant this once; the notice goes away by itself.
+
 Then double-tap Left Shift to capture the selected text, and press Right Shift with Left Shift to show or hide Bronze.
 
-## Windows
+### Windows
 
-```powershell
-cargo build --release
-.\target\release\bronze.exe
-```
+1. Unzip the download and put `bronze.exe` wherever you keep apps, such as a `Bronze` folder in your user folder.
+2. Open `bronze.exe`. SmartScreen says Windows protected your PC; choose **More info**, then **Run anyway**.
+   Windows asks only the first time.
 
 Bronze needs no permission on Windows.
 Double-tap Left Shift to capture the selected text, and press Right Shift with Left Shift to show or hide Bronze.
 Both Shift gestures are ignored while a full-screen app such as a game is in front, and `Ctrl+Alt+C` and `Ctrl+Alt+Space` still work there.
 While an app running as administrator has focus, Windows keeps its keys and its text from Bronze, so the gestures do nothing there and capture finds nothing.
-The release build has no console window; run `.\target\release\bronze.exe 2> bronze.log` to keep its log.
+To start Bronze when you sign in, put a shortcut to `bronze.exe` in the folder that `Win+R`, `shell:startup` opens.
+Bronze has no console window; to keep its log, open PowerShell in its folder and run `Start-Process .\bronze.exe -RedirectStandardError bronze.log`.
 
-## Linux
+### Linux
 
 ```sh
-sudo apt install build-essential pkg-config libfontconfig-dev libxkbcommon-dev
-./scripts/linux-app.sh
+tar -xzf bronze-*-linux-x86_64.tar.gz
+cd bronze-*-linux-x86_64/
+./linux-app.sh
 ```
 
-Those are the build packages on Ubuntu and Debian.
-Bronze draws with Vulkan, so it also needs a Vulkan driver, such as `mesa-vulkan-drivers`.
-The script builds Bronze and installs it for you alone: the binary in `~/.local/bin`, its icon, and an entry that puts Bronze in your app launcher.
-Run it again to update.
+`linux-app.sh` installs Bronze for you alone: the binary in `~/.local/bin`, its icon, and an entry that puts Bronze in your app launcher.
 Pass `--autostart` to also start Bronze at login, and `--uninstall` to remove what it installed.
 Uninstalling keeps your notes in `~/.local/share/bronze`.
+To update, run the new version's `linux-app.sh`.
+Bronze draws with Vulkan, so it needs a Vulkan driver, such as `mesa-vulkan-drivers`.
+The folder also holds `bronze-sync`, the [sync server](#sync).
 
 On X11, everything works, the Shift gestures included.
 On Wayland, the gestures need Bronze to read the keyboard itself, which only members of the `input` group may do: run `sudo usermod -aG input $USER`, then log out and back in.
@@ -70,6 +133,9 @@ On GNOME's Wayland session, capture usually finds nothing, because GNOME does no
 KDE Plasma does, and so does X11.
 
 ## Shortcuts
+
+Type in the box at the bottom and press Enter to add a note.
+`--data <dir>` keeps notes and preferences in a folder of your choice, as in `bronze --data /path/to/folder`.
 
 | Action | Shortcut |
 | --- | --- |
@@ -105,6 +171,38 @@ The sync code is the only way in, so there is no account, and nobody can reset a
 With sync off, Bronze opens no network connection.
 [docs/sync.md](docs/sync.md) describes the encryption, the protocol and its limits.
 
+## Build from source
+
+Install Rust with [rustup](https://rustup.rs).
+The repository pins its Rust version, so the first build downloads that version by itself.
+
+On macOS:
+
+```sh
+./scripts/mac-app.sh
+```
+
+This builds Bronze and installs it as `~/Applications/Bronze.app`, signed with your Apple Development identity (or the one named in `BRONZE_SIGN`), so macOS keeps its Accessibility access across rebuilds.
+
+On Windows, with the Visual Studio C++ build tools:
+
+```powershell
+cargo build --release
+.\target\release\bronze.exe
+```
+
+On Linux:
+
+```sh
+sudo apt install build-essential pkg-config libfontconfig-dev libxkbcommon-dev
+./scripts/linux-app.sh
+```
+
+Those are the build packages on Ubuntu and Debian.
+`scripts/linux-app.sh` builds Bronze and installs it the same way as the download's `linux-app.sh`, with the same `--autostart` and `--uninstall`.
+
+`cargo run` starts a development build on any system.
+
 ## Check
 
 ```sh
@@ -119,6 +217,11 @@ On Windows, `scripts\real-window.ps1` drives real windows with injected keys: bo
 It sends real key presses to the desktop, so it refuses to start while the session is locked or was used in the last 3 minutes unless you pass `-Force`.
 
 Renders and element trees land in `out/`.
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) says how.
+What changed in each release is in [CHANGELOG.md](CHANGELOG.md), and [SECURITY.md](SECURITY.md) says how to report a vulnerability privately.
 
 ## License
 

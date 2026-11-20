@@ -1,7 +1,7 @@
 {"events": [
   {"t": 0.4, "type": "type", "text": "Ask for a **rollout plan** with one rollback step per stage", "every": 0.035},
   {"t": 2.7, "type": "key", "name": "Enter"},
-  {"t": 3.3, "type": "tap", "key": "note-2/check"},
+  {"t": 3.3, "type": "tap", "key": "note-e17e0c4830757ccb8b107b694dd4ae09/check"},
   {"t": 4.2, "type": "key", "name": "k", "cmd": true},
   {"t": 4.7, "type": "type", "text": "res", "every": 0.08},
   {"t": 5.3, "type": "key", "name": "Enter"},

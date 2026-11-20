@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in Bronze does not work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Bronze did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Select text in ...
+        2. Press ...
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Bronze version
+      description: The release you downloaded, or the commit you built.
+      placeholder: 0.1.1
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options:
+        - macOS
+        - Windows
+        - Linux, X11
+        - Linux, Wayland
+    validations:
+      required: true
+  - type: input
+    id: details
+    attributes:
+      label: System details
+      description: OS version, and on Linux the desktop, such as GNOME 50 or KDE Plasma 6.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Anything Bronze printed. Start it from a terminal to see it; on Windows, run `Start-Process .\bronze.exe -RedirectStandardError bronze.log` in PowerShell. Remove any note text you would rather not share.
+      render: text
