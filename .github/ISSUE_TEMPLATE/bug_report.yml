@@ -45,5 +45,5 @@ body:
     id: log
     attributes:
       label: Log
-      description: Anything Bronze printed. Start it from a terminal to see it; on Windows, `bronze.exe 2> bronze.log`. Remove any note text you would rather not share.
+      description: Anything Bronze printed. Start it from a terminal to see it; on Windows, run `Start-Process .\bronze.exe -RedirectStandardError bronze.log` in PowerShell. Remove any note text you would rather not share.
       render: text

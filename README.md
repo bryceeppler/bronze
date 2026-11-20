@@ -107,7 +107,7 @@ Double-tap Left Shift to capture the selected text, and press Right Shift with L
 Both Shift gestures are ignored while a full-screen app such as a game is in front, and `Ctrl+Alt+C` and `Ctrl+Alt+Space` still work there.
 While an app running as administrator has focus, Windows keeps its keys and its text from Bronze, so the gestures do nothing there and capture finds nothing.
 To start Bronze when you sign in, put a shortcut to `bronze.exe` in the folder that `Win+R`, `shell:startup` opens.
-Bronze has no console window; run `bronze.exe 2> bronze.log` to keep its log.
+Bronze has no console window; to keep its log, open PowerShell in its folder and run `Start-Process .\bronze.exe -RedirectStandardError bronze.log`.
 
 ### Linux
 

@@ -15,6 +15,6 @@ New-Item -ItemType Directory -Force (Join-Path $stage $name), "target\package" |
 Copy-Item (Join-Path $TargetDir "release\bronze.exe"), LICENSE -Destination (Join-Path $stage $name)
 $zip = "target\package\$name.zip"
 Remove-Item -Force $zip -ErrorAction SilentlyContinue
-tar.exe -a -c -f $zip -C $stage $name
+& "$env:SystemRoot\System32\tar.exe" -a -c -f $zip -C $stage $name
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 Write-Output "windows-package: packaged $zip"
