@@ -78,7 +78,7 @@ The release lists a SHA-256 checksum for each download, also attached as `SHA256
 
 | System | Download |
 | --- | --- |
-| macOS 14 or later, Apple silicon or Intel | `Bronze-<version>-macos-universal.zip` |
+| macOS 14 or later, Apple silicon | `Bronze-<version>-macos-arm64.zip` |
 | Windows 10 or 11, 64-bit | `bronze-<version>-windows-x86_64.zip` |
 | Linux, x86-64, glibc 2.35 or later, such as Ubuntu 22.04 or Debian 12 and newer | `bronze-<version>-linux-x86_64.tar.gz` |
 

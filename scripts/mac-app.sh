@@ -15,16 +15,12 @@ rm -rf target/mac-app
 mkdir -p "$staged/Contents/MacOS" "$staged/Contents/Resources"
 
 if [ "$mode" = --package ]; then
-  targets=(aarch64-apple-darwin x86_64-apple-darwin)
-  rustup target add "${targets[@]}"
+  target=aarch64-apple-darwin
+  rustup target add "$target"
   CARGO_ENCODED_RUSTFLAGS=$(printf '%s\x1f%s' "--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" "--remap-path-prefix=$PWD=/bronze")
   export CARGO_ENCODED_RUSTFLAGS MACOSX_DEPLOYMENT_TARGET=14.0
-  slices=()
-  for target in "${targets[@]}"; do
-    cargo build --release --locked --target "$target" --target-dir target/package-build
-    slices+=("target/package-build/$target/release/bronze")
-  done
-  lipo -create -output "$staged/Contents/MacOS/bronze" "${slices[@]}"
+  cargo build --release --locked --target "$target" --target-dir target/package-build
+  cp "target/package-build/$target/release/bronze" "$staged/Contents/MacOS/bronze"
 else
   cargo build --release
   cp target/release/bronze "$staged/Contents/MacOS/bronze"
@@ -74,7 +70,7 @@ fi
 
 if [ "$mode" = --package ]; then
   mkdir -p target/package
-  zip=target/package/Bronze-$version-macos-universal.zip
+  zip=target/package/Bronze-$version-macos-arm64.zip
   rm -f "$zip"
   ditto -c -k --norsrc --noextattr --keepParent "$staged" "$zip"
   echo "mac-app: packaged $zip"

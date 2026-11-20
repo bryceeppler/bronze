@@ -3,6 +3,13 @@
 Every release of Bronze, newest first.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## 0.1.2 - 2026-11-20
+
+### Changed
+
+- The macOS download is for Apple silicon only, as `Bronze-0.1.2-macos-arm64.zip`.
+  It no longer carries the Intel code that made macOS 27 warn that Bronze will not open in macOS 28.
+
 ## 0.1.1 - 2026-11-20
 
 ### Added
