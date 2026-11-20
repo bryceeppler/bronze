@@ -470,7 +470,7 @@ dependencies = [
 
 [[package]]
 name = "bronze"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arboard",
  "bronze-wire",
@@ -501,7 +501,7 @@ dependencies = [
 
 [[package]]
 name = "bronze-wire"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "bumpalo"
