@@ -18,7 +18,7 @@ if [ "$mode" = --package ]; then
   targets=(aarch64-apple-darwin x86_64-apple-darwin)
   rustup target add "${targets[@]}"
   CARGO_ENCODED_RUSTFLAGS=$(printf '%s\x1f%s' "--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" "--remap-path-prefix=$PWD=/bronze")
-  export CARGO_ENCODED_RUSTFLAGS
+  export CARGO_ENCODED_RUSTFLAGS MACOSX_DEPLOYMENT_TARGET=14.0
   slices=()
   for target in "${targets[@]}"; do
     cargo build --release --locked --target "$target" --target-dir target/package-build

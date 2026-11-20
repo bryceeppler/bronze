@@ -88,7 +88,7 @@ If you would rather not run a prebuilt binary, [build Bronze from source](#build
 ### macOS
 
 1. Unzip the download and move `Bronze.app` to your Applications folder.
-2. Open Bronze. macOS says it cannot check the app for malware; choose **Done**.
+2. Open Bronze. macOS says Apple could not verify that Bronze is free of malware; choose **Done**.
 3. Open **System Settings**, then **Privacy & Security**, scroll down to the message about Bronze, and choose **Open Anyway**.
    Confirm with your password, then choose **Open Anyway** once more.
 4. Bronze asks for Accessibility access: choose **Open Settings** in the notice and turn Bronze on under **Accessibility**.
